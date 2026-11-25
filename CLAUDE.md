@@ -15,6 +15,7 @@ npm run test:ui               # ui-chromium, ui-firefox, ui-webkit (+ ui-setup)
 npm run test:api | test:generated
 npm run test:smoke            # @smoke: the critical path only
 npm run test:bugs             # @bug: known defects, expected to fail
+npm run test:unit             # node --test for the generator's static checks and weakening guard
 npx playwright test <file> --project=ui-chromium --reporter=list --retries=0
 npm run check                 # typecheck + lint + format:check; CI runs the same three
 ```
@@ -34,10 +35,11 @@ npm run check                 # typecheck + lint + format:check; CI runs the sam
 ## Writing tests
 
 1. Locators: `getByTestId()` (`testIdAttribute` is `data-test`). saucedemo publishes a `data-test`
-   attribute on every element, and the Playwright docs count test ids as an "explicit contract".
+   attribute on almost every element the tests use, and the Playwright docs count test ids as an "explicit contract".
    Where the user-facing text is the behaviour under test (button label, error, heading), assert that
    text with `toHaveText`. Use `getByRole` for elements without a test id. No CSS chains, no XPath, no
-   `nth()` unless the order is what is being tested. Locators live in page objects, not in specs.
+   `nth()` unless the order is what is being tested. Locators live in page objects, not in specs
+   (generated specs are self-contained by design, see `generator/README.md`).
 2. No `waitForTimeout`, sleeps or `networkidle`. Use web-first assertions only (`await expect(locator)…`).
 3. Tests are independent: each has its own context and its own data, and none depends on run order.
 4. Every expected value has a source: the task, the apidoc, RFC 9110 for undocumented error codes,
