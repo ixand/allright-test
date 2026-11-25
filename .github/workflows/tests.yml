@@ -39,6 +39,9 @@ jobs:
       - name: Check formatting
         run: npm run format:check
 
+      - name: Unit tests for the generator's guard rules
+        run: npm run test:unit
+
       # Browser binaries are not cached, as the Playwright CI guide recommends.
       - name: Install browsers
         run: npx playwright install --with-deps chromium firefox webkit
