@@ -8,6 +8,7 @@
     "test:ui": "playwright test --project=\"ui-*\"",
     "test:api": "playwright test --project=api",
     "test:generated": "playwright test --project=generated",
+    "test:unit": "node --test generator/lib.test.ts",
     "test:bugs": "playwright test --grep @bug",
     "report": "playwright show-report",
     "typecheck": "tsc --noEmit",

@@ -1,0 +1,15 @@
+TC-GEN-02: Cancel on the checkout overview keeps the cart
+
+Preconditions:
+- The user is logged out and the cart is empty.
+
+Steps:
+1. Log in as standard_user with the password secret_sauce.
+2. Add "Sauce Labs Backpack" to the cart.
+3. Open the cart and click "Checkout".
+4. Enter first name "John", last name "Doe", postal code "12345" and click "Continue".
+5. On the overview page, click "Cancel".
+
+Expected result:
+- The "Products" page is shown.
+- The cart badge still shows "1".

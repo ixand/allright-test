@@ -1,0 +1,14 @@
+TC-GEN-01: Add a product to the cart from its details page
+
+Preconditions:
+- The user is logged out and the cart is empty.
+
+Steps:
+1. Log in as standard_user with the password secret_sauce.
+2. On the Products page, open the details page of "Sauce Labs Bolt T-Shirt".
+3. Click "Add to cart".
+4. Open the cart.
+
+Expected result:
+- After step 3 the button reads "Remove" and the cart badge shows "1".
+- The cart holds exactly one item, "Sauce Labs Bolt T-Shirt", priced "$15.99".

@@ -1,0 +1,33 @@
+Running 3 tests using 1 worker
+
+  ✘  1 [generated] › tests/generated/TC-GEN-03.spec.ts:3:1 › TC-GEN-03 Overview item total is rounded to cents (7.7s)
+Testing stopped early after 1 maximum allowed failures.
+
+  1) [generated] › tests/generated/TC-GEN-03.spec.ts:3:1 › TC-GEN-03 Overview item total is rounded to cents › Enter first name "John", last name "Doe", postal code "12345" and click "Continue".
+
+    Error: expect(locator).toHaveText(expected) failed
+
+    Locator:  getByTestId('subtotal-label')
+    Expected: "Item total: $57.98"
+    Received: "Item total: $57.980000000000004"
+    Timeout:  7000ms
+
+    Call log:
+      - Expect "toHaveText" getByTestId('subtotal-label') with timeout 7000ms
+      - waiting for getByTestId('subtotal-label')
+        18 × locator resolved to <div data-test="subtotal-label" class="summary_subtotal_label">Item total: $57.980000000000004</div>
+           - unexpected value "Item total: $57.980000000000004"
+
+      29 |     await page.getByTestId('continue').click();
+      30 |     await expect(page.getByTestId('title')).toHaveText('Checkout: Overview');
+    > 31 |     await expect(page.getByTestId('subtotal-label')).toHaveText('Item total: $57.98');
+         |                                                      ^
+      32 |     await expect(page.getByTestId('tax-label')).toHaveText('Tax: $4.64');
+      33 |     await expect(page.getByTestId('total-label')).toHaveText('Total: $62.62');
+      34 |   });
+        at tests/generated/TC-GEN-03.spec.ts:31:54
+
+  1 failed
+    [generated] › tests/generated/TC-GEN-03.spec.ts:3:1 › TC-GEN-03 Overview item total is rounded to cents
+  2 did not run
+  1 error was not a part of any test, see above for details

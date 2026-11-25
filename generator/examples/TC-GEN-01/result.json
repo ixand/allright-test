@@ -1,0 +1,35 @@
+{
+  "caseId": "TC-GEN-01",
+  "title": "Add a product to the cart from its details page",
+  "input": "generator/examples/inputs/TC-GEN-01.txt",
+  "spec": "tests/generated/TC-GEN-01.spec.ts",
+  "backend": "GEN_LLM_CMD",
+  "maxRepairs": 1,
+  "verdict": "PASSED",
+  "passed": true,
+  "exitCode": 0,
+  "appBugReason": null,
+  "pipelineError": null,
+  "attemptsUsed": 1,
+  "attempts": [
+    {
+      "n": 1,
+      "kind": "generate",
+      "outcome": "passed",
+      "promptChars": 7225,
+      "promptSha256": "0882902d0fbb3ccadd3e1b17b13907a45ef17765eaf349af0e7f9d6341122011",
+      "promptSaved": true,
+      "replyChars": 1731,
+      "modelMs": 4906,
+      "specSha256": "9c7de326497a3b0e05ffd797d6be5b348f8840884dd5846220f8256dc69023f6",
+      "playwrightMs": 3498,
+      "playwright": "3 passed"
+    }
+  ],
+  "durationsMs": {
+    "total": 9709,
+    "model": 4906,
+    "playwright": 3498
+  },
+  "finishedAt": "2026-11-25T10:46:43.623Z"
+}

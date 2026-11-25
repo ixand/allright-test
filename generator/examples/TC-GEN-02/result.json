@@ -1,0 +1,35 @@
+{
+  "caseId": "TC-GEN-02",
+  "title": "Cancel on the checkout overview keeps the cart",
+  "input": "generator/examples/inputs/TC-GEN-02.txt",
+  "spec": "tests/generated/TC-GEN-02.spec.ts",
+  "backend": "GEN_LLM_CMD",
+  "maxRepairs": 1,
+  "verdict": "PASSED",
+  "passed": true,
+  "exitCode": 0,
+  "appBugReason": null,
+  "pipelineError": null,
+  "attemptsUsed": 1,
+  "attempts": [
+    {
+      "n": 1,
+      "kind": "generate",
+      "outcome": "passed",
+      "promptChars": 7230,
+      "promptSha256": "c7d62bfb14cd8a9af62a58e733b00e6a03b95a96396d5494559506c80f2b766b",
+      "promptSaved": true,
+      "replyChars": 1912,
+      "modelMs": 10387,
+      "specSha256": "9a64722d4ac775179c5cfb6114cf6e80f7b577d4346e18aecb53d80c51c58290",
+      "playwrightMs": 3821,
+      "playwright": "3 passed"
+    }
+  ],
+  "durationsMs": {
+    "total": 15641,
+    "model": 10387,
+    "playwright": 3821
+  },
+  "finishedAt": "2026-11-25T10:46:59.397Z"
+}

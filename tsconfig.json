@@ -10,5 +10,6 @@
     "erasableSyntaxOnly": true,
     "types": ["node"]
   },
-  "include": ["playwright.config.ts", "tests/**/*.ts", "generator/**/*.ts"]
+  "include": ["playwright.config.ts", "tests/**/*.ts", "generator/**/*.ts"],
+  "exclude": ["generator/examples"]
 }

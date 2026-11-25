@@ -1,0 +1,7 @@
+Running 3 tests using 1 worker
+
+  ✓  1 [generated] › tests/generated/TC-GEN-01.spec.ts:3:1 › TC-GEN-01 Add a product to the cart from its details page (617ms)
+  ✓  2 [generated] › tests/generated/TC-GEN-01.spec.ts:3:1 › TC-GEN-01 Add a product to the cart from its details page (643ms)
+  ✓  3 [generated] › tests/generated/TC-GEN-01.spec.ts:3:1 › TC-GEN-01 Add a product to the cart from its details page (652ms)
+
+  3 passed (3.1s)

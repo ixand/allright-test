@@ -1,0 +1,15 @@
+TC-GEN-03: Overview item total is rounded to cents
+
+Preconditions:
+- The user is logged out and the cart is empty.
+
+Steps:
+1. Log in as standard_user with the password secret_sauce.
+2. Add "Sauce Labs Fleece Jacket" and "Sauce Labs Onesie" to the cart.
+3. Open the cart and click "Checkout".
+4. Enter first name "John", last name "Doe", postal code "12345" and click "Continue".
+
+Expected result:
+- The overview shows "Item total: $57.98" ($49.99 + $7.99).
+- The overview shows "Tax: $4.64".
+- The overview shows "Total: $62.62".

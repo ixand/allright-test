@@ -1,0 +1,46 @@
+{
+  "caseId": "TC-GEN-03",
+  "title": "Overview item total is rounded to cents",
+  "input": "generator/examples/inputs/TC-GEN-03.txt",
+  "spec": "tests/generated/TC-GEN-03.spec.ts",
+  "backend": "GEN_LLM_CMD",
+  "maxRepairs": 1,
+  "verdict": "APP_BUG",
+  "passed": false,
+  "exitCode": 2,
+  "appBugReason": "The case expects the overview to show \"Item total: $57.98\" for $49.99 + $7.99, but the application shows \"Item total: $57.980000000000004\" (unrounded floating-point sum).",
+  "pipelineError": null,
+  "attemptsUsed": 2,
+  "attempts": [
+    {
+      "n": 1,
+      "kind": "generate",
+      "outcome": "failed",
+      "promptChars": 7278,
+      "promptSha256": "4d67144c93e76c619c13dc30dd37356b7e515e9246747c4713892ceec68ad207",
+      "promptSaved": true,
+      "replyChars": 1859,
+      "modelMs": 8178,
+      "specSha256": "dd1e9a373aa610cfce79537e9a96779437dae9375bf544bb9f7afa0162851a7b",
+      "playwrightMs": 8509,
+      "playwright": "1 failed, 2 did not run"
+    },
+    {
+      "n": 2,
+      "kind": "repair",
+      "outcome": "app-bug",
+      "promptChars": 11567,
+      "promptSha256": "7639005e97bff594866a3a8fce7f9711d75d872951bdafee24802c75e85c9620",
+      "promptSaved": true,
+      "replyChars": 180,
+      "modelMs": 2630,
+      "appBugReason": "The case expects the overview to show \"Item total: $57.98\" for $49.99 + $7.99, but the application shows \"Item total: $57.980000000000004\" (unrounded floating-point sum)."
+    }
+  ],
+  "durationsMs": {
+    "total": 20672,
+    "model": 10808,
+    "playwright": 8509
+  },
+  "finishedAt": "2026-11-25T10:47:20.212Z"
+}
