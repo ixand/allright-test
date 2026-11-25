@@ -1,0 +1,14 @@
+import path from 'node:path';
+import { expect, test as setup } from './fixtures.ts';
+import { users } from './data/users.ts';
+
+// Must match `storageState` of the `ui` project in playwright.config.ts.
+const authFile = path.join(__dirname, '../../playwright/.auth/standard_user.json');
+
+setup('log in as standard_user', async ({ page, loginPage, inventoryPage }) => {
+  await loginPage.goto();
+  await loginPage.login(users.standard);
+  await expect(page).toHaveURL('/inventory.html');
+  await expect(inventoryPage.title).toHaveText('Products');
+  await page.context().storageState({ path: authFile });
+});
