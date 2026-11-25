@@ -11,6 +11,7 @@ export default defineConfig([
       'test-results/',
       'blob-report/',
       'playwright/.auth/',
+      'probes/',
       // Raw model output, kept verbatim as evidence of what the generator produced.
       'generator/examples/',
     ],

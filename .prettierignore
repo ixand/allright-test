@@ -3,6 +3,7 @@ playwright-report/
 test-results/
 blob-report/
 playwright/.auth/
+probes/
 package-lock.json
 # Raw model output, kept verbatim as evidence of what the generator produced.
 generator/examples/

@@ -48,5 +48,14 @@ for (const [project, r] of [...rows].sort(([a], [b]) => a.localeCompare(b))) {
   lines.push(`| ${project} | ${r.passed} | ${r.knownBug} | ${r.failed} | ${r.flaky} | ${r.skipped} |`);
 }
 if (failures.length) lines.push('', '**Failed:**', ...failures.map((f) => `- ${f}`));
+// Errors raised outside any test (a worker teardown, the global timeout) turn the run red without a failed row.
+const errors = report.errors ?? [];
+if (errors.length) {
+  lines.push(
+    '',
+    '**Errors outside tests:**',
+    ...errors.map((e) => `- ${String(e.message ?? e).split('\n')[0]}`),
+  );
+}
 lines.push('', `Duration: ${Math.round((report.stats?.duration ?? 0) / 1000)} s`);
 console.log(lines.join('\n'));

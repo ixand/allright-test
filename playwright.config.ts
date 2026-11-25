@@ -35,7 +35,8 @@ export default defineConfig({
     : [['list'], ['html', { open: 'never' }]],
   use: {
     testIdAttribute: 'data-test',
-    trace: 'on-first-retry',
+    // CI retries once, so the retry records the trace; locally there is no retry, so keep it on failure.
+    trace: CI ? 'on-first-retry' : 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
   projects: [
