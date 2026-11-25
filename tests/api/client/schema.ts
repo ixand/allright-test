@@ -111,3 +111,12 @@ export async function readBody(response: APIResponse): Promise<unknown> {
 export function createdBookingId(body: unknown): number | undefined {
   return isJsonObject(body) && typeof body.bookingid === 'number' ? body.bookingid : undefined;
 }
+
+/** The ids from a GetBookingIds body (apidoc: [{ bookingid }]), read leniently for the same reason. */
+export function listedBookingIds(body: unknown): number[] {
+  if (!Array.isArray(body)) return [];
+  return body.flatMap((item: unknown) => {
+    const id = createdBookingId(item);
+    return id === undefined ? [] : [id];
+  });
+}

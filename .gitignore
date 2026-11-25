@@ -3,4 +3,7 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.auth/
+playwright/leftover-bookings.txt
+# Local one-off probes and their screenshots
+probes/
 .env

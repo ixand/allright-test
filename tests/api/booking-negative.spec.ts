@@ -58,5 +58,7 @@ test('POST /auth with a wrong password returns no token', async ({ client }) => 
   parseToken(await accepted.json());
 
   const rejected = await client.auth({ ...ADMIN, password: 'wrong-password' });
+  // A server error carries no token either, and it is not a refusal (RFC 9110 §15.6).
+  expect(rejected.status(), 'the server answered the request, not a 5xx').toBeLessThan(500);
   expect(await readBody(rejected)).not.toHaveProperty('token');
 });
