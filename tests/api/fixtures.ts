@@ -42,9 +42,8 @@ const OUT_OF_TIME = 'cleanup ran out of time';
  * Relative to the directory of playwright.config.ts. One line per booking that could not be deleted:
  * `<ISO 8601 time>\t#<id> (<what the API answered>)\t<test title path>`.
  *
- * The in-run errors are not enough on their own: test.fail() absorbs them in a @bug test, and with retries a
- * test that leaks on the first attempt ends as "flaky" in a green run. The file outlives both, so CI can fail
- * on it. It is only ever appended to, because a line stays true until somebody deletes that booking; CI starts
+ * The in-run errors are not enough on their own: with retries a test that leaks on the first attempt ends as
+ * "flaky" in a green run. The file outlives the retry, so CI can fail on it. It is only ever appended to, because a line stays true until somebody deletes that booking; CI starts
  * from a fresh checkout, so there the file exists only if this run wrote it.
  */
 const LEFTOVER_FILE = path.join('playwright', 'leftover-bookings.txt');
@@ -103,7 +102,7 @@ async function deleteBooking(
 export const expect = baseExpect.extend({
   /**
    * RFC 9110 §15.5: a 4xx status says the client erred. Any of them is a correct answer to a request the API
-   * should refuse, so a known-bug test that accepts them all turns "unexpectedly passed" with every fix.
+   * should refuse, so a known-bug test that accepts them all passes with every fix.
    */
   toBeClientError(status: number) {
     const pass = status >= 400 && status <= 499;
@@ -168,17 +167,11 @@ export const test = base.extend<ApiFixtures, ApiWorkerFixtures>({
       if (outcome !== undefined) keep(`#${id} (${outcome})`);
     }
     if (leftovers.length > 0) {
-      // test.fail() in a @bug test absorbs the error below, so the worker ledger reports these bookings again,
-      // outside any test.
+      // The error below fails this attempt, a parked @bug test included, but a retry can still end the test
+      // as "flaky". So the worker ledger reports these bookings again, outside any test.
       console.error(`Bookings left on the sandbox: ${leftovers.join(', ')}`);
       leftoverBookings.push(`${leftovers.join(', ')} from ${testInfo.titlePath.join(' › ')}`);
       throw new Error(`Could not delete bookings: ${leftovers.join(', ')}`);
-    }
-    if (testInfo.expectedStatus === 'failed' && testInfo.status === 'passed') {
-      // A @bug test that passes unexpectedly makes Playwright tear the worker down inside it, where an error from
-      // the ledger would turn it back into the expected failure. The run is red without that error, and the log
-      // line above has already named every booking left by an earlier test.
-      leftoverBookings.length = 0;
     }
   },
 

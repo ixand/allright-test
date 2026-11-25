@@ -3,10 +3,12 @@ import { expectLineItems } from './assertions.ts';
 import { sumCents, taxCents, usd } from './data/money.ts';
 import { products } from './data/products.ts';
 import { customer, type Customer } from './data/users.ts';
+import { parkedOn } from '../support/knownBug.ts';
 
-// Each test asserts the correct behaviour. Its controls run first, so a broken path still fails for real;
-// test.fail() comes after them and covers only the bug assertion. Once a bug is fixed, the test reports
-// "Expected to fail, but passed": drop test.fail() and close the bug.
+// Each test asserts the correct behaviour. Its controls run first, as plain assertions, so a broken path
+// still fails for real; parkedOn() covers only the bug assertions. While the bug is open the test is
+// skipped with a `parked` note; once it is fixed the test passes with a `parked-fixed` note: move the
+// assertions out of parkedOn() and close the bug.
 
 test(
   'BUG-UI-01: the overview rounds the item total to cents',
@@ -32,12 +34,13 @@ test(
     await expect(checkoutOverviewPage.total).toHaveText(`Total: ${usd(itemTotal + tax)}`);
     await expect(checkoutOverviewPage.itemTotal).toHaveText(/^Item total: \$/);
 
-    test.fail(
-      true,
-      'BUG-UI-01: the item total is the raw float sum, "Item total: $57.980000000000004" for Fleece Jacket + Onesie',
+    await parkedOn(
+      'BUG-UI-01',
+      'the item total is the raw float sum, "Item total: $57.980000000000004" for Fleece Jacket + Onesie',
+      async () => {
+        await expect(checkoutOverviewPage.itemTotal).toHaveText(`Item total: ${usd(itemTotal)}`);
+      },
     );
-
-    await expect(checkoutOverviewPage.itemTotal).toHaveText(`Item total: ${usd(itemTotal)}`);
   },
 );
 
@@ -78,7 +81,7 @@ test(
     // the wait cannot be satisfied by the page the click was made on, and the *IfOffered() read that
     // follows sees a page that has settled.
     // Not recognised: a click that is ignored without any message. No state tells it from a click whose
-    // page has not opened yet, so the wait after it times out and the test fails before test.fail(): it
+    // page has not opened yet, so the wait after it times out and the test fails before parkedOn(): it
     // is reported as failed, not as fixed, and never as passed.
     const stopped = cartPage.blocked
       .or(checkoutInfoPage.blocked)
@@ -100,17 +103,18 @@ test(
       'after Finish: the order is confirmed, or the shop visibly stops the empty cart',
     ).toBeVisible();
 
-    test.fail(
-      true,
-      'BUG-UI-02: Checkout stays enabled on an empty cart and opens checkout; Finish then confirms an order with "Total: $0.00"',
+    await parkedOn(
+      'BUG-UI-02',
+      'Checkout stays enabled on an empty cart and opens checkout; Finish then confirms an order with "Total: $0.00"',
+      async () => {
+        // The wait above ended on the confirmation or on a stop, so the journey is over and this is not a
+        // check that can pass just because the last click has not taken effect yet.
+        await expect(page, 'an empty cart must not end in a confirmed order').not.toHaveURL(
+          '/checkout-complete.html',
+        );
+        await expect(checkoutCompletePage.container).toBeHidden();
+      },
     );
-
-    // The wait above ended on the confirmation or on a stop, so the journey is over and this is not a
-    // check that can pass just because the last click has not taken effect yet.
-    await expect(page, 'an empty cart must not end in a confirmed order').not.toHaveURL(
-      '/checkout-complete.html',
-    );
-    await expect(checkoutCompletePage.container).toBeHidden();
   },
 );
 
@@ -145,20 +149,24 @@ for (const { field, input, named } of whitespaceOnly) {
       // Either outcome proves the submit went through: an error on step one, or the overview.
       await expect(checkoutInfoPage.error.or(checkoutOverviewPage.finishButton)).toBeVisible();
 
-      test.fail(true, `BUG-UI-03: "   " passes the ${field} check and checkout moves on to the overview`);
-
       // Any wording is a valid fix, as long as the customer stays on step one and is told which field is
       // wrong. Naming the field is part of the expectation because the title says "like an empty one", and
-      // an empty field gets "Error: <field> is required". An error that names no field keeps this test an
-      // expected failure, on purpose.
-      await expect(page, 'whitespace-only input must keep the customer on step one').toHaveURL(
-        '/checkout-step-one.html',
+      // an empty field gets "Error: <field> is required". An error that names no field keeps this test
+      // parked, on purpose.
+      await parkedOn(
+        'BUG-UI-03',
+        `"   " passes the ${field} check and checkout moves on to the overview`,
+        async () => {
+          await expect(page, 'whitespace-only input must keep the customer on step one').toHaveURL(
+            '/checkout-step-one.html',
+          );
+          await expect(checkoutInfoPage.error).toBeVisible();
+          await expect(
+            checkoutInfoPage.error,
+            `the error must name ${field}, as the error for an empty ${field} does`,
+          ).toHaveText(named);
+        },
       );
-      await expect(checkoutInfoPage.error).toBeVisible();
-      await expect(
-        checkoutInfoPage.error,
-        `the error must name ${field}, as the error for an empty ${field} does`,
-      ).toHaveText(named);
     },
   );
 }
@@ -180,11 +188,13 @@ test(
     await expect(header.cartBadge).toBeHidden();
     for (const product of added) await expect(inventoryPage.cartButton(product)).toBeVisible();
 
-    test.fail(
-      true,
-      'BUG-UI-04: after Reset App State the cart is empty but product buttons keep saying "Remove" until a reload',
+    await parkedOn(
+      'BUG-UI-04',
+      'after Reset App State the cart is empty but product buttons keep saying "Remove" until a reload',
+      async () => {
+        for (const product of added)
+          await expect(inventoryPage.cartButton(product)).toHaveText('Add to cart');
+      },
     );
-
-    for (const product of added) await expect(inventoryPage.cartButton(product)).toHaveText('Add to cart');
   },
 );

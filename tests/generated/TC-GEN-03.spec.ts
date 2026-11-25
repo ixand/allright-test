@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { parkedOn } from '../support/knownBug.ts';
 
 const annotation = { type: 'issue', description: 'https://github.com/ixand/allright-test#bug-ui-01' };
 
@@ -40,10 +41,12 @@ test('TC-GEN-03 Overview item total is rounded to cents', { tag: '@bug', annotat
     await expect(onesie.getByTestId('inventory-item-price')).toHaveText('$7.99');
     await expect(page.getByTestId('tax-label')).toHaveText('Tax: $4.64');
     await expect(page.getByTestId('total-label')).toHaveText('Total: $62.62');
-    test.fail(
-      true,
-      'BUG-UI-01: the item total is the raw float sum, "Item total: $57.980000000000004" for Fleece Jacket + Onesie',
+    await parkedOn(
+      'BUG-UI-01',
+      'the item total is the raw float sum, "Item total: $57.980000000000004" for Fleece Jacket + Onesie',
+      async () => {
+        await expect(page.getByTestId('subtotal-label')).toHaveText('Item total: $57.98');
+      },
     );
-    await expect(page.getByTestId('subtotal-label')).toHaveText('Item total: $57.98');
   });
 });

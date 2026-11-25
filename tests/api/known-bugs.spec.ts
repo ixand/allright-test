@@ -1,15 +1,16 @@
 import { parseBooking, parseCreatedBooking, parseToken, readBody } from './client/schema.ts';
 import { ADMIN, PRICE_WITH_CENTS, toCents } from './data/bookings.ts';
 import { expect, GONE, test } from './fixtures.ts';
+import { parkedOn } from '../support/knownBug.ts';
 
-// Each test asserts the correct behaviour and is expected to fail until the bug is fixed. test.fail() is
-// called only after the positive controls: a control that breaks before that point is reported as a real
-// failure instead of being absorbed as the expected one.
+// Each test asserts the correct behaviour. The positive controls come first, as plain assertions, so a
+// control that breaks is a real failure. Only the bug assertions sit inside parkedOn(): while the bug is open
+// the test is skipped with a `parked` note instead of failing.
 //
 // The apidoc documents no error responses, so every expected status below comes from RFC 9110. A title names
 // the status the RFC points to, while the assertion accepts every correct fix: any 4xx (§15.5) for a request
-// the API should refuse, anything but 405 for a repeated DELETE. Whichever fix ships, the test then reports
-// "Expected to fail, but passed" and CI goes red until test.fail() is removed.
+// the API should refuse, anything but 405 for a repeated DELETE. Whichever fix ships, the test then passes
+// with a `parked-fixed` note: move the assertion out of parkedOn() and close the bug.
 //
 // In BUG-API-02..05 and 07 the `booking` fixture is the control: it creates a booking from the same payload
 // and asserts 200, so each request differs from an accepted one only in the field under test.
@@ -34,8 +35,13 @@ test(
     expect(rejected.status(), SERVER_ANSWERED).toBeLessThan(500);
     expect(await readBody(rejected), 'control: the wrong password gets no token').not.toHaveProperty('token');
 
-    test.fail(true, 'BUG-API-01: wrong credentials get 200 {"reason":"Bad credentials"} instead of 401');
-    expect(rejected.status()).toBeClientError();
+    await parkedOn(
+      'BUG-API-01',
+      'wrong credentials get 200 {"reason":"Bad credentials"} instead of 401',
+      () => {
+        expect(rejected.status()).toBeClientError();
+      },
+    );
   },
 );
 
@@ -49,8 +55,13 @@ test(
     const { firstname: _omitted, ...withoutFirstname } = booking.payload;
     const response = await client.createUnchecked(withoutFirstname);
 
-    test.fail(true, 'BUG-API-02: a missing required field gets 500 Internal Server Error instead of 400');
-    expect(response.status()).toBeClientError();
+    await parkedOn(
+      'BUG-API-02',
+      'a missing required field gets 500 Internal Server Error instead of 400',
+      () => {
+        expect(response.status()).toBeClientError();
+      },
+    );
   },
 );
 
@@ -67,8 +78,13 @@ test(
     });
     expect(response.status(), SERVER_ANSWERED).toBeLessThan(500);
 
-    test.fail(true, 'BUG-API-03: invalid date strings are accepted with 200 and stored as "0NaN-aN-aN"');
-    expect(response.status()).toBeClientError();
+    await parkedOn(
+      'BUG-API-03',
+      'invalid date strings are accepted with 200 and stored as "0NaN-aN-aN"',
+      () => {
+        expect(response.status()).toBeClientError();
+      },
+    );
   },
 );
 
@@ -86,8 +102,9 @@ test(
     });
     expect(response.status(), SERVER_ANSWERED).toBeLessThan(500);
 
-    test.fail(true, 'BUG-API-04: a checkout earlier than the checkin is accepted with 200');
-    expect(response.status()).toBeClientError();
+    await parkedOn('BUG-API-04', 'a checkout earlier than the checkin is accepted with 200', () => {
+      expect(response.status()).toBeClientError();
+    });
   },
 );
 
@@ -101,8 +118,9 @@ test(
     const response = await client.createUnchecked({ ...booking.payload, totalprice: 'abc' });
     expect(response.status(), SERVER_ANSWERED).toBeLessThan(500);
 
-    test.fail(true, 'BUG-API-05: a non-numeric totalprice is accepted with 200 and stored as null');
-    expect(response.status()).toBeClientError();
+    await parkedOn('BUG-API-05', 'a non-numeric totalprice is accepted with 200 and stored as null', () => {
+      expect(response.status()).toBeClientError();
+    });
   },
 );
 
@@ -120,11 +138,12 @@ test(
     const second = await client.delete(booking.id, { token });
     expect(second.status(), SERVER_ANSWERED).toBeLessThan(500);
 
-    test.fail(true, 'BUG-API-06: a second DELETE gets 405 Method Not Allowed instead of 404');
     // The defect is the 405: it says the resource does not support DELETE (RFC 9110 §15.5.6), which the first
     // DELETE disproved. 404 or 410 is the fix the RFC points to, but DELETE is idempotent (§9.2.2), so a server
     // may equally repeat its success answer, 201 here or 200/204, and that is a correct fix as well.
-    expect(second.status(), 'the second DELETE').not.toBe(405);
+    await parkedOn('BUG-API-06', 'a second DELETE gets 405 Method Not Allowed instead of 404', () => {
+      expect(second.status(), 'the second DELETE').not.toBe(405);
+    });
   },
 );
 
@@ -142,12 +161,19 @@ test(
     expect(stored.status(), 'control: the new booking can be read back (apidoc: 200)').toBe(200);
     const storedBooking = parseBooking(await stored.json());
 
-    test.fail(true, 'BUG-API-07: a decimal totalprice is truncated to a whole number, 111.99 becomes 111');
-    expect
-      .soft(toCents(created.booking.totalprice), 'totalprice echoed by POST /booking, in cents')
-      .toBe(PRICE_WITH_CENTS);
-    expect
-      .soft(toCents(storedBooking.totalprice), 'totalprice returned by GET /booking/:id, in cents')
-      .toBe(PRICE_WITH_CENTS);
+    // Hard assertions, each naming its source: the first that fails parks the test, so while the echo is
+    // truncated the stored value is not reached.
+    await parkedOn(
+      'BUG-API-07',
+      'a decimal totalprice is truncated to a whole number, 111.99 becomes 111',
+      () => {
+        expect(toCents(created.booking.totalprice), 'totalprice echoed by POST /booking, in cents').toBe(
+          PRICE_WITH_CENTS,
+        );
+        expect(toCents(storedBooking.totalprice), 'totalprice returned by GET /booking/:id, in cents').toBe(
+          PRICE_WITH_CENTS,
+        );
+      },
+    );
   },
 );
