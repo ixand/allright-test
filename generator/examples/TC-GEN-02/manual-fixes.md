@@ -1,6 +1,6 @@
 # TC-GEN-02: рев'ю і ручні правки
 
-**Ручних правок немає.** `tests/generated/TC-GEN-02.spec.ts` є виходом конвеєра без змін. Його sha256
+**Ручних правок немає.** `tests/generated/TC-GEN-02.spec.ts` це вихід конвеєра без змін. Його sha256
 збігається з `specSha256` у [`result.json`](result.json) (`9a64722d…`). Від сирої відповіді
 [`attempt-1.spec.ts`](attempt-1.spec.ts) він відрізняється лише форматуванням Prettier. Перевірити можна так:
 

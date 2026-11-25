@@ -6,6 +6,7 @@ import {
   afterRunFailure,
   afterStaticFailure,
   canAnswerAppBug,
+  caseWarnings,
   checkSpec,
   contradictedValues,
   eslintProblems,
@@ -18,6 +19,7 @@ import {
   render,
   repairFailure,
   repairProblems,
+  runVerdict,
   scan,
   snapshotFromErrorContext,
   startHistory,
@@ -135,6 +137,58 @@ describe('parseCase', () => {
       );
     }
   });
+
+  it('reads an "Expected:" indented under a step as the expected result of that step', () => {
+    const perStep = parseCase(
+      [
+        'TC-X-2: t',
+        'Steps:',
+        '1. Open the cart.',
+        '   Expected: The title is "Your Cart".',
+        '2. Click "Checkout".',
+        '   Expected:',
+        '   - The title is "Checkout: Your Information".',
+        '     The form is empty.',
+        '3. Click "Cancel".',
+        'Expected result:',
+        '- The title is "Your Cart" again.',
+      ].join('\n'),
+    );
+    assert.deepEqual(perStep.steps, ['Open the cart.', 'Click "Checkout".', 'Click "Cancel".']);
+    assert.deepEqual(perStep.expected, [
+      'The title is "Your Cart".',
+      'The title is "Checkout: Your Information". The form is empty.',
+      'The title is "Your Cart" again.',
+    ]);
+    assert.deepEqual(perStep.literals, ['Your Cart', 'Checkout: Your Information']);
+  });
+
+  // Unindented, the "Expected:" reads as the final section, and step 2 used to become an expected result.
+  it('rejects a step list that goes on after an unindented "Expected:"', () => {
+    assert.throws(
+      () => parseCase('TC-X-3: t\nSteps:\n1. Open the cart.\nExpected: "Your Cart"\n2. Click "Checkout".'),
+      /"2\. Click "Checkout"\." continues a numbered list after an "Expected:" line/,
+    );
+    const numbered = parseCase('TC-X-4: t\nSteps:\n1. a\n2. b\nExpected result:\n1. "c"\n2. "d"\n3. "e"');
+    assert.deepEqual(numbered.expected, ['"c"', '"d"', '"e"']);
+  });
+
+  it('warns about a case whose expected values are not in double quotes', () => {
+    assert.deepEqual(caseWarnings(tc), []);
+    const single = parseCase(
+      "TC-X-5: t\nSteps:\n1. a\nExpected result:\n- The title is 'Your Cart' and «Products».",
+    );
+    assert.deepEqual(single.literals, []);
+    const warnings = caseWarnings(single);
+    assert.equal(warnings.length, 2);
+    assert.match(warnings[0], /quotes 'Your Cart', «Products» without double quotes/);
+    assert.match(warnings[1], /no double-quoted value/);
+    // An apostrophe is not a quote, and a number needs none.
+    const plain = parseCase(
+      'TC-X-6: t\nSteps:\n1. a\nExpected result:\n- The user\'s cart isn\'t empty: "1".',
+    );
+    assert.deepEqual(caseWarnings(plain), []);
+  });
 });
 
 describe('render', () => {
@@ -165,6 +219,15 @@ describe('parseReply', () => {
     assert.equal(parseReply('```ts\na\n```\nAPP_BUG: both').kind, 'invalid');
     assert.equal(parseReply('```ts\na\n```\n```ts\nb\n```').kind, 'invalid');
     assert.equal(parseReply('I could not do it.').kind, 'invalid');
+  });
+
+  it('does not end the block at ``` inside a template literal', () => {
+    const code = 'const a = `x ``` y`;\nconst b = 2;\n';
+    assert.deepEqual(parseReply(`\`\`\`ts\n${code}\`\`\`\n`), { kind: 'code', code });
+    assert.deepEqual(parseReply(`Here:\n  \`\`\`typescript\n${code}  \`\`\`  \nDone.`), {
+      kind: 'code',
+      code,
+    });
   });
 });
 
@@ -213,6 +276,72 @@ describe('staticProblems', () => {
         ),
         /Promise\.allSettled/,
       ],
+      [
+        `${strict}\ntest('TC-GEN-03 again', async ({ page }) => {\n  await page.goto('/');\n});\n`,
+        /has 2 test\(\) calls/,
+      ],
+      [replaced("test('TC-GEN-03 Overview", "test('Overview"), /does not start with the case ID TC-GEN-03/],
+      [`import { readFileSync } from 'node:fs';\n${strict}`, /imports 'node:fs'; only '@playwright\/test'/],
+      [`import 'node:fs';\n${strict}`, /imports 'node:fs'/],
+      [
+        replaced("import { test, expect } from '@playwright/test';", ''),
+        /does not import \{ test, expect \}/,
+      ],
+      [replaced(SUBTOTAL, `    try {\n  ${SUBTOTAL}    } catch {}\n`), /try\/catch/],
+      [replaced(SUBTOTAL, `${SUBTOTAL.trimEnd().slice(0, -1)}.catch(() => undefined);\n`), /\.catch\(\)/],
+      [
+        replaced("page.getByTestId('checkout')", "page.getByRole('button').nth(1)"),
+        /nth\(\)\/first\(\)\/last\(\)/,
+      ],
+      [
+        replaced("page.getByTestId('checkout')", "page.getByRole('button').first()"),
+        /nth\(\)\/first\(\)\/last\(\)/,
+      ],
+      [
+        replaced("page.getByTestId('checkout')", "page.getByRole('button').last()"),
+        /nth\(\)\/first\(\)\/last\(\)/,
+      ],
+      [
+        replaced(
+          CART_CHECK,
+          `${CART_CHECK}    await page.goto('/cart.html', { waitUntil: 'networkidle' });\n`,
+        ),
+        /networkidle/,
+      ],
+      [replaced(CART_CHECK, `${CART_CHECK}    console.log('cart');\n`), /console/],
+      [replaced(CART_CHECK, `${CART_CHECK}    require('node:fs');\n`), /require\(\)/],
+      [replaced(CART_CHECK, `${CART_CHECK}    await import('node:fs');\n`), /dynamic import\(\)/],
+      // The spellings of test.fail()/test.skip() that the test.* rule does not see.
+      [replaced(CART_CHECK, `${CART_CHECK}    test.info().fail();\n`), /through TestInfo/],
+      [
+        replaced('async ({ page }) => {\n', 'async ({ page }, testInfo) => {\n  testInfo.skip();\n'),
+        /through TestInfo/,
+      ],
+      [
+        replaced('async ({ page }) => {\n', 'async ({ page }, info) => {\n  info.fixme();\n'),
+        /through TestInfo/,
+      ],
+      // Passes exactly when the assertion of the case fails.
+      [
+        replaced(
+          SUBTOTAL,
+          `    await expect(${SUBTOTAL.trim().replace('await ', '').slice(0, -1)}).rejects.toThrow();\n`,
+        ),
+        /\.rejects/,
+      ],
+      [replaced("page.getByTestId('checkout')", "page['locator']('#checkout')"), /by a string key/],
+      [replaced("page.getByTestId('checkout')", 'page[`locator`]("#checkout")'), /by a string key/],
+      [replaced("page.getByTestId('checkout')", "page.getByRole('button')['first']()"), /by a string key/],
+      [replaced("page.getByTestId('checkout')", "page.getByRole('button')?.['nth'](1)"), /by a string key/],
+      [replaced(CART_CHECK, `${CART_CHECK}    expect(1).toBe(1);\n`), /asserts on a constant/],
+      [
+        replaced(CART_CHECK, `${CART_CHECK}    expect('Your Cart').toEqual('Your Cart');\n`),
+        /asserts on a constant/,
+      ],
+      [
+        replaced(CART_CHECK, `${CART_CHECK}    const one = 1;\n    expect(one, 'cart').toBe(1);\n`),
+        /asserts on a constant/,
+      ],
     ];
     for (const [spec, problem] of cases) {
       const problems = staticProblems(spec, tc);
@@ -221,6 +350,20 @@ describe('staticProblems', () => {
         `expected ${problem} in ${JSON.stringify(problems)}`,
       );
     }
+  });
+
+  it('reports each of test.fail() and a constant expect() once, and leaves lookalikes alone', () => {
+    const marked = replaced(
+      'async ({ page }) => {\n',
+      "async ({ page }) => {\n  test.fail(true, 'known');\n",
+    );
+    assert.deepEqual(staticProblems(marked, tc), ['skips or marks the test with test.skip/fixme/fail']);
+    // An array of expected texts is not a member read, and a locator kept in a constant is not a constant.
+    const lookalike = replaced(
+      CART_CHECK,
+      `    const title = page.getByTestId('title');\n    await expect(title).toHaveText(['Your Cart']);\n    await expect(page).toHaveURL('/cart.html');\n`,
+    );
+    assert.deepEqual(staticProblems(lookalike, tc), []);
   });
 });
 
@@ -377,6 +520,46 @@ describe('weakeningProblems', () => {
     );
   });
 
+  // Both counts used to include expect() on a constant, so this repair of a failed count went through.
+  it('rejects a repair that swaps a failed assertion for an expect() on a constant', () => {
+    const countCheck = "    await expect(page.getByTestId('inventory-item')).toHaveCount(1);\n";
+    const counted = replaced(CART_CHECK, `${CART_CHECK}${countCheck}`);
+    const countFailure =
+      "Error: expect(locator).toHaveCount(expected) failed\n\nLocator:  getByTestId('inventory-item')\nExpected: 1\nReceived: 2\nTimeout:  7000ms";
+    for (const fake of ['    expect(1).toBe(1);\n', '    const one = 1;\n    expect(one).toBe(1);\n']) {
+      assert.deepEqual(
+        weakeningProblems(
+          counted,
+          counted.replace(countCheck, () => fake),
+          countFailure,
+          tc,
+        ),
+        [
+          'has 6 expect() calls where the spec it repairs had 7',
+          'has 6 exact matchers (toHaveText, toHaveCount, toHaveURL, ...) where the spec it repairs had 7',
+        ],
+      );
+    }
+    assert.deepEqual(
+      weakeningProblems(
+        counted,
+        counted.replace('toHaveCount(1)', () => 'toHaveCount(2)'),
+        countFailure,
+        tc,
+      ),
+      ['copies the number the application showed (2) into a matcher'],
+    );
+    // The number was there before the failure, so keeping it copies nothing.
+    assert.deepEqual(
+      weakeningProblems(counted, counted, countFailure.replace('Received: 2', 'Received: 0'), tc),
+      [],
+    );
+    assert.deepEqual(
+      weakeningProblems(counted, counted, countFailure.replace('Received: 2', 'Received: 1'), tc),
+      [],
+    );
+  });
+
   it('accepts a repair that only fixes a locator and adds a screen check', () => {
     const repair = replaced(
       "    await page.getByTestId('checkout').click();\n",
@@ -404,6 +587,29 @@ describe('repair history', () => {
     assert.deepEqual(contradictedValues(notFound, tc), []);
     const screenCheck = 'Expected: "Checkout: Overview"\nReceived: "Checkout: Your Information"';
     assert.deepEqual(contradictedValues(screenCheck, tc), []);
+  });
+
+  it('reads a contradicted number when the expected result of the case names it', () => {
+    const counting = parseCase(
+      'TC-X-7: t\nSteps:\n1. a\nExpected result:\n- The cart lists 1 item for "$29.99", order 12345.',
+    );
+    const numbers = (expected: string, received: string) =>
+      contradictedValues(
+        `Error: expect(locator).toHaveCount(expected) failed\n\nExpected: ${expected}\nReceived: ${received}`,
+        counting,
+      );
+    assert.deepEqual(numbers('1', '2'), [{ expected: '1', received: '2' }]);
+    assert.deepEqual(numbers('1', '1.0'), []);
+    // Not numbers of the case: a part of "12345" or of "$29.99", or a number the case never names.
+    assert.deepEqual(numbers('123', '2'), []);
+    assert.deepEqual(numbers('29', '2'), []);
+    assert.deepEqual(numbers('6', '2'), []);
+    assert.deepEqual(numbers('1', '<element(s) not found>'), []);
+    assert.deepEqual(numbers('1', '"2"'), []);
+    const history = afterRunFailure(startHistory(), strict, 'Expected: 1\nReceived: 2', counting);
+    assert.deepEqual(passProblems(history), [
+      'passed, but an earlier run showed "2" where the case expects "1", and the application has not changed since',
+    ]);
   });
 
   it('shows the repair round the run failure unchanged after a run', () => {
@@ -493,6 +699,19 @@ describe('Playwright output helpers', () => {
       !out.includes('attachment') && !out.includes('test-failed-1.png') && !out.includes('Error Context'),
     );
     assert.ok(!out.includes('─'));
+  });
+
+  // Exit status 1 without a failed test is a config error or "No tests found", not a failed spec.
+  it('tells a passed run, a failed test and a run without tests apart', () => {
+    assert.equal(runVerdict(0, { passed: 3 }, 3), 'passed');
+    assert.equal(runVerdict(0, { passed: 2, skipped: 1 }, 3), 'failed');
+    assert.equal(runVerdict(0, { passed: 1 }, 3), 'failed');
+    assert.equal(runVerdict(0, {}, 3), 'failed');
+    assert.equal(runVerdict(1, { failed: 1, 'did not run': 2 }, 3), 'failed');
+    assert.equal(runVerdict(1, { flaky: 1, passed: 2 }, 3), 'failed');
+    assert.equal(runVerdict(1, parseSummary('Error: No tests found.\n'), 3), 'did-not-run');
+    assert.equal(runVerdict(1, { passed: 3 }, 3), 'did-not-run');
+    assert.equal(runVerdict(1, { interrupted: 1, 'did not run': 2 }, 3), 'did-not-run');
   });
 
   it('reads the received values and the summary', () => {

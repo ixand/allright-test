@@ -28,6 +28,9 @@ const RESERVED_IDS = new Set(['inputs']);
 const SECTION_RE = /^(preconditions?|steps|expected(?:\s+results?)?)\s*:\s*(.*)$/i;
 const ITEM_RE = /^(?:\d+[.)]|[-*•])\s+(.*)$/;
 const QUOTED_RE = /"([^"\n]+)"|“([^”\n]+)”/g;
+// Quotes that do not make a literal: «…», „…“ and '…' (not an apostrophe inside a word).
+const OTHER_QUOTES_RE = /«[^»\n]+»|„[^“”\n]+[“”]|(?<![\w'])'[^'\n]+'(?![\w'])/g;
+const indentOf = (line: string): number => line.length - line.trimStart().length;
 
 const unique = <T>(items: T[]): T[] => [...new Set(items)];
 const count = (text: string, re: RegExp): number => text.match(re)?.length ?? 0;
@@ -48,13 +51,32 @@ export function parseCase(source: string): TestCase {
     throw new PipelineError(`"${header[1]}" cannot be a case ID: generator/examples/${header[1]}/ is taken`);
   const sections: Record<Section, string[]> = { preconditions: [], steps: [], expected: [] };
   let current: Section | undefined;
+  // The indent of the last step item, and whether the lines under it belong to its own "Expected:".
+  let stepIndent = 0;
+  let underStep = false;
+  let firstExpectedItem = true;
   for (const raw of rest) {
     const line = raw.trim();
     if (!line) continue;
+    const indent = indentOf(raw);
     const section = SECTION_RE.exec(line);
+    if (underStep && indent <= stepIndent) underStep = false;
+    if (underStep && !section) {
+      const nested = ITEM_RE.exec(line);
+      if (nested || sections.expected.length === 0) sections.expected.push(nested ? nested[1] : line);
+      else sections.expected[sections.expected.length - 1] += ` ${line}`;
+      continue;
+    }
     if (section) {
       const name = section[1].toLowerCase();
-      current = name.startsWith('pre') ? 'preconditions' : name === 'steps' ? 'steps' : 'expected';
+      const next = name.startsWith('pre') ? 'preconditions' : name === 'steps' ? 'steps' : 'expected';
+      // "Expected:" indented under a step is the expected result of that step: the step list goes on after it.
+      if (next === 'expected' && current === 'steps' && sections.steps.length > 0 && indent > stepIndent) {
+        underStep = true;
+        if (section[2]) sections.expected.push(section[2]);
+        continue;
+      }
+      current = next;
       if (section[2]) sections[current].push(section[2]);
       continue;
     }
@@ -65,6 +87,18 @@ export function parseCase(source: string): TestCase {
     }
     const list = sections[current];
     const item = ITEM_RE.exec(line);
+    if (item && current === 'steps') stepIndent = indent;
+    if (item && current === 'expected') {
+      // Without the indent, an "Expected:" between two steps reads as the final section, and every
+      // later step would silently become an expected result.
+      const number = /^(\d+)[.)]/.exec(line)?.[1];
+      if (firstExpectedItem && number !== undefined && Number(number) > 1 && sections.steps.length > 0) {
+        throw new PipelineError(
+          `"${line}" continues a numbered list after an "Expected:" line. Indent the expected result of a step under that step, or put every expected result in one final "Expected result:" section`,
+        );
+      }
+      firstExpectedItem = false;
+    }
     if (item) list.push(item[1]);
     else if (list.length > 0) list[list.length - 1] += ` ${line}`;
     else list.push(line);
@@ -75,6 +109,27 @@ export function parseCase(source: string): TestCase {
     [...sections.expected.join('\n').matchAll(QUOTED_RE)].map((m) => m[1] ?? m[2] ?? ''),
   );
   return { id: header[1], title: header[2].trim(), ...sections, literals, text };
+}
+
+/**
+ * What a case leaves unguarded. Only double-quoted values become literals; a case that quotes with
+ * '…' or «…» parses, but nothing then ties its expected values to the spec.
+ */
+export function caseWarnings(tc: TestCase): string[] {
+  const warnings: string[] = [];
+  const expected = tc.expected.join('\n');
+  const other = unique(expected.replace(QUOTED_RE, '').match(OTHER_QUOTES_RE) ?? []);
+  if (other.length > 0) {
+    warnings.push(
+      `the expected result quotes ${other.join(', ')} without double quotes: only "…" marks a value that must reach the spec verbatim`,
+    );
+  }
+  if (tc.literals.length === 0) {
+    warnings.push(
+      'the expected result has no double-quoted value, so no expected value is checked in the spec or guarded in a repair',
+    );
+  }
+  return warnings;
 }
 
 /**
@@ -93,7 +148,9 @@ export type Reply =
 
 export function parseReply(raw: string): Reply {
   const reply = raw.replace(/\r\n?/g, '\n');
-  const fenced = [...reply.matchAll(/```([\w-]*)[^\n]*\n([\s\S]*?)```/g)];
+  // A fence opens and closes on a line of its own, so ``` inside a template literal of the spec does
+  // not cut the block short. A line of the spec that is nothing but ``` still would.
+  const fenced = [...reply.matchAll(/^[ \t]*```([\w-]*)[^\n]*\n([\s\S]*?)^[ \t]*```[ \t]*$/gm)];
   const typed = fenced.filter((m) => /^(ts|typescript)$/i.test(m[1]));
   const blocks = typed.length > 0 ? typed : fenced.filter((m) => m[1] === '');
   const bug = /^[\s`*]*APP_BUG:\s*(.+?)[\s`*]*$/m.exec(reply);
@@ -188,8 +245,70 @@ export function scan(source: string): Scan {
 }
 
 const EXPECT_CALL = /\bexpect(?:\s*\.\s*(?:soft|poll))?\s*\(/g;
-const EXACT_MATCHER =
-  /\.\s*(?:toHaveText|toHaveValue|toHaveValues|toHaveCount|toHaveURL|toHaveTitle|toHaveAttribute|toBe|toEqual|toStrictEqual)\s*\(/g;
+const EXACT_MATCHERS = new Set([
+  'toHaveText',
+  'toHaveValue',
+  'toHaveValues',
+  'toHaveCount',
+  'toHaveURL',
+  'toHaveTitle',
+  'toHaveAttribute',
+  'toBe',
+  'toEqual',
+  'toStrictEqual',
+]);
+const MATCHER_AFTER = /^(?:\s*\.\s*not)?\s*\.\s*([A-Za-z]\w*)\s*\(/;
+const CONSTANT_DECLARATION = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;]+)?=(?!=|>)([^;]*)/g;
+const NUMBER_TOKEN = /(?<![\w$])\d[\w.]*/g;
+const CONSTANT_WORD = /\b(?:true|false|null|undefined|NaN|Infinity|void|typeof)\b/g;
+const IDENTIFIER = /[A-Za-z_$][\w$]*/g;
+
+/** Whether an expression of scanned code (literals emptied) names nothing but literals and `constants`. */
+function isConstant(expression: string, constants: Set<string>): boolean {
+  const rest = expression
+    .replace(NUMBER_TOKEN, '')
+    .replace(CONSTANT_WORD, '')
+    .replace(IDENTIFIER, (name) => (constants.has(name) ? '' : name));
+  return !/[A-Za-z_$]/.test(rest);
+}
+
+interface ExpectCall {
+  /** expect(1), expect('a'), expect(one) with `const one = 1`: an assertion that cannot see the page. */
+  constant: boolean;
+  /** The matcher is one that compares the whole value. */
+  exact: boolean;
+}
+
+/** Every expect() of scanned code, with what it is called on and the matcher chained to it. */
+function expectCalls(code: string): ExpectCall[] {
+  const constants = new Set<string>();
+  for (const [, name, value] of code.matchAll(CONSTANT_DECLARATION)) {
+    if (isConstant(value, constants)) constants.add(name);
+  }
+  const calls: ExpectCall[] = [];
+  for (const match of code.matchAll(EXPECT_CALL)) {
+    const open = match.index + match[0].length;
+    let depth = 1;
+    let end = open;
+    while (end < code.length && depth > 0) {
+      if ('([{'.includes(code[end])) depth += 1;
+      else if (')]}'.includes(code[end])) depth -= 1;
+      end += 1;
+    }
+    // The first argument only: a second one is the message of the assertion.
+    let argument = code.slice(open, end - 1);
+    let nesting = 0;
+    for (let i = 0; i < argument.length; i += 1) {
+      if ('([{'.includes(argument[i])) nesting += 1;
+      else if (')]}'.includes(argument[i])) nesting -= 1;
+      else if (argument[i] === ',' && nesting === 0) argument = argument.slice(0, i);
+    }
+    const matcher = MATCHER_AFTER.exec(code.slice(end))?.[1] ?? '';
+    calls.push({ constant: isConstant(argument, constants), exact: EXACT_MATCHERS.has(matcher) });
+  }
+  return calls;
+}
+
 const NEGATION = /\.\s*not\s*\./g;
 const TEST_CALL = /\btest\s*\(/g;
 const STEP_CALL = /\btest\s*\.\s*step\s*\(/g;
@@ -205,6 +324,21 @@ const FORBIDDEN: Array<[RegExp, string]> = [
   ],
   [/\.\s*only\s*\(/, 'uses .only'],
   [/\btest\s*\.\s*(?:skip|fixme|fail)\b/, 'skips or marks the test with test.skip/fixme/fail'],
+  // The same three through TestInfo: test.info().fail(), or testInfo.skip() on the second argument of test().
+  [
+    /\btest\s*\.\s*info\b|\btestInfo\b|(?<!\btest\s*)\.\s*(?:skip|fixme|fail)\s*\(/,
+    'skips or marks the test through TestInfo (test.info(), testInfo, .skip()/.fixme()/.fail())',
+  ],
+  // await expect(expect(locator).toHaveText('…')).rejects.toThrow() passes exactly when the inner assertion fails.
+  [
+    /\.\s*(?:rejects|resolves)\b|\.\s*toThrow(?:Error)?\s*\(/,
+    'expects a failure with .rejects/.resolves/.toThrow(), which turns a failed assertion into a pass',
+  ],
+  // page['locator'](…) and locator['first']() are the forbidden calls below under a name these checks cannot read.
+  [
+    /[\w$)\]]\s*(?:\?\.\s*)?\[\s*(?:''|""|``)\s*\]/,
+    "reads a member by a string key (page['locator']); call methods by name",
+  ],
   [/\btry\s*\{|\.\s*catch\s*\(|\bcatch\s*[({]/, 'swallows errors with try/catch or .catch()'],
   // An assertion is a promise, so a rejection handler or a settle-all turns its failure into a pass.
   // ESLint's no-floating-promises message itself suggests ".then with a rejection handler".
@@ -219,6 +353,7 @@ const FORBIDDEN: Array<[RegExp, string]> = [
   [/\.\s*(?:nth|first|last)\s*\(/, 'picks elements by position with nth()/first()/last()'],
   [/\bpage\s*\.\s*pause\s*\(/, 'calls page.pause()'],
   [/\brequire\s*\(/, 'uses require()'],
+  [/\bimport\s*\(/, 'uses a dynamic import()'],
   [/\bconsole\s*\./, 'writes to the console'],
 ];
 
@@ -246,7 +381,12 @@ export function staticProblems(source: string, tc: TestCase): string[] {
   const title = TEST_TITLE.exec(stripped)?.[2];
   if (tests === 1 && !title?.startsWith(tc.id))
     problems.push(`the test title does not start with the case ID ${tc.id}`);
-  if (count(code, EXPECT_CALL) === 0) problems.push('has no expect() assertion');
+  const expects = expectCalls(code);
+  if (expects.length === 0) problems.push('has no expect() assertion');
+  if (expects.some((call) => call.constant))
+    problems.push(
+      'asserts on a constant, e.g. expect(1) or expect(true): such an assertion never sees the page',
+    );
   for (const [re, problem] of FORBIDDEN) if (re.test(code)) problems.push(problem);
   if (strings.includes('networkidle')) problems.push("waits for 'networkidle'");
   if (/\.\s*goto\s*\(\s*(['"`])https?:/.test(stripped))
@@ -360,6 +500,49 @@ export function receivedValues(failure: string): string[] {
   return unique([...failure.matchAll(/^\s*Received(?: string)?\s*:\s*"(.+)"\s*$/gm)].map((m) => m[1]));
 }
 
+interface Mismatch {
+  expected: string;
+  received: string;
+  /** A string, printed in double quotes; otherwise a number, as toHaveCount and toBe print it. */
+  quoted: boolean;
+}
+
+const FAILURE_VALUE = /^(?:"(.+)"|(-?\d+(?:\.\d+)?))$/;
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The "Expected: … / Received: …" pairs of a failure whose two sides are both strings or both numbers
+ * and differ. "<element(s) not found>" is neither, so a wrong locator gives no pair. A failure printed
+ * as a multi-line diff (arrays, objects) gives none either.
+ */
+function mismatches(failure: string): Mismatch[] {
+  const found: Mismatch[] = [];
+  let expected: { value: string; quoted: boolean } | undefined;
+  for (const line of failure.split('\n')) {
+    const e = /^\s*Expected(?: string)?\s*:\s*(.+?)\s*$/.exec(line);
+    if (e) {
+      const value = FAILURE_VALUE.exec(e[1]);
+      expected = value ? { value: value[1] ?? value[2], quoted: value[1] !== undefined } : undefined;
+      continue;
+    }
+    const r = /^\s*Received(?: string)?\s*:\s*(.+?)\s*$/.exec(line);
+    const value = r ? FAILURE_VALUE.exec(r[1]) : null;
+    if (value && expected && expected.quoted === (value[1] !== undefined)) {
+      const received = value[1] ?? value[2];
+      const same = expected.quoted
+        ? received === expected.value
+        : Number(received) === Number(expected.value);
+      if (!same) found.push({ expected: expected.value, received, quoted: expected.quoted });
+    }
+    if (r || /^\s*Error:/.test(line)) expected = undefined;
+  }
+  return found;
+}
+
+/** How many matchers of scanned code take the number as their only or first argument: toHaveCount(2). */
+const matcherArguments = (code: string, number: string): number =>
+  count(code, new RegExp(`\\.\\s*to[A-Z]\\w*\\s*\\(\\s*${escapeRegExp(number)}\\s*[,)]`, 'g'));
+
 /**
  * Compares a repair with the spec it repairs. A repair that makes a failing test pass by asserting
  * less is worse than no repair: it turns a found defect into a green check.
@@ -368,15 +551,18 @@ export function weakeningProblems(previous: string, next: string, failure: strin
   const before = scan(previous);
   const after = scan(next);
   const problems: string[] = [];
-  const notFewer = (re: RegExp, what: string): void => {
-    const was = count(before.code, re);
-    const now = count(after.code, re);
-    if (now < was) problems.push(`has ${now} ${what} where the spec it repairs had ${was}`);
+  // An expect() on a constant is not counted: expect(1).toBe(1) in place of a failed toHaveCount(1)
+  // would otherwise keep both counts.
+  const was = expectCalls(before.code).filter((call) => !call.constant);
+  const now = expectCalls(after.code).filter((call) => !call.constant);
+  const notFewer = (pick: (call: ExpectCall) => boolean, what: string): void => {
+    const [a, b] = [now.filter(pick).length, was.filter(pick).length];
+    if (a < b) problems.push(`has ${a} ${what} where the spec it repairs had ${b}`);
   };
-  notFewer(EXPECT_CALL, 'expect() calls');
+  notFewer(() => true, 'expect() calls');
   // toHaveText('Item total: $57.98') -> toContainText('Item total: $57.98') keeps the count of
   // expect() and the literal, yet passes on the buggy "Item total: $57.980000000000004".
-  notFewer(EXACT_MATCHER, 'exact matchers (toHaveText, toHaveCount, toHaveURL, ...)');
+  notFewer((call) => call.exact, 'exact matchers (toHaveText, toHaveCount, toHaveURL, ...)');
   if (count(after.code, NEGATION) > count(before.code, NEGATION))
     problems.push('adds a negated (.not) assertion');
   for (const literal of tc.literals) {
@@ -387,35 +573,40 @@ export function weakeningProblems(previous: string, next: string, failure: strin
     if (after.strings.some((s) => s.includes(value)))
       problems.push(`copies the value the application showed ("${value}") into the spec`);
   }
+  // toHaveCount(1) -> toHaveCount(2) after "Expected: 1, Received: 2": the same copy, without quotes.
+  const numbers = unique(
+    mismatches(failure)
+      .filter((m) => !m.quoted)
+      .map((m) => m.received),
+  );
+  for (const number of numbers) {
+    if (matcherArguments(after.code, number) > matcherArguments(before.code, number))
+      problems.push(`copies the number the application showed (${number}) into a matcher`);
+  }
   return problems;
 }
 
 export interface Contradiction {
-  /** A double-quoted value of the case. */
+  /** A double-quoted value of the case, or a number its expected result names. */
   expected: string;
-  /** The string the application showed instead. */
+  /** What the application showed instead. */
   received: string;
 }
 
+/** Whether the text names the number as a number of its own, not as a part of "12345" or "$57.98". */
+const namesNumber = (text: string, number: string): boolean =>
+  new RegExp(`(?<![\\w.])${escapeRegExp(number)}(?![\\w]|[.,]\\d)`).test(text);
+
 /**
- * The case values a run contradicted: an assertion expected one of them and the application showed
- * another string. "<element(s) not found>" is not quoted, so a wrong locator is not a contradiction.
+ * The case values a run contradicted: an assertion expected a double-quoted value of the case, or a
+ * number the expected result names ("the cart lists 1 item"), and the application showed another.
+ * "<element(s) not found>" is neither a string nor a number, so a wrong locator is not a contradiction.
  */
 export function contradictedValues(failure: string, tc: TestCase): Contradiction[] {
-  const found: Contradiction[] = [];
-  let expected: string | undefined;
-  for (const line of failure.split('\n')) {
-    const e = /^\s*Expected(?: string)?\s*:\s*"(.+)"\s*$/.exec(line);
-    if (e) {
-      expected = e[1];
-      continue;
-    }
-    const r = /^\s*Received(?: string)?\s*:\s*"(.+)"\s*$/.exec(line);
-    if (r && expected !== undefined && tc.literals.includes(expected) && r[1] !== expected)
-      found.push({ expected, received: r[1] });
-    if (r || /^\s*Error:/.test(line)) expected = undefined;
-  }
-  return found;
+  const expectedText = tc.expected.join('\n');
+  return mismatches(failure)
+    .filter((m) => (m.quoted ? tc.literals.includes(m.expected) : namesNumber(expectedText, m.expected)))
+    .map(({ expected, received }) => ({ expected, received }));
 }
 
 /** What the repair rounds of one case work from. */
@@ -480,6 +671,18 @@ export function passProblems(history: History): string[] {
 export function isInside(dir: string, path: string): boolean {
   const rel = relative(dir, path);
   return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
+
+export type RunVerdict = 'passed' | 'failed' | 'did-not-run';
+
+/**
+ * What one Playwright run says about the spec. Exit status 0 alone is not a pass: a skipped test also
+ * exits 0. Exit status 1 alone is not a failed test: a config error or "No tests found" exits 1 too,
+ * and such a run says nothing about the application.
+ */
+export function runVerdict(status: number, counts: Record<string, number>, runs: number): RunVerdict {
+  if (status === 0) return counts.passed === runs && Object.keys(counts).length === 1 ? 'passed' : 'failed';
+  return (counts.failed ?? 0) + (counts.flaky ?? 0) > 0 ? 'failed' : 'did-not-run';
 }
 
 /** Counts from the summary lines of the list reporter, e.g. { passed: 1 } or { failed: 1 }. */

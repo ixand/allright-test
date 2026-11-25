@@ -25,6 +25,7 @@ import {
   afterRunFailure,
   afterStaticFailure,
   canAnswerAppBug,
+  caseWarnings,
   checkSpec,
   eslintProblems,
   isInside,
@@ -35,6 +36,7 @@ import {
   render,
   repairFailure,
   repairProblems,
+  runVerdict,
   snapshotFromErrorContext,
   startHistory,
   trimOutput,
@@ -48,8 +50,8 @@ const SPEC_DIR = join(ROOT, 'tests', 'generated');
 const LOG_ROOT = join(GENERATOR_DIR, 'examples');
 const KEEP_PROMPT_MAX_CHARS = 20_000;
 const PLAYWRIGHT_TIMEOUT_MS = 180_000;
-// The repository's definition of done for any test: three passes in a row, no retries. A single green run
-// passed a spec that failed 6 times in 10.
+// The repository's definition of done for any test: three passes in a row, no retries. It lowers the chance
+// of accepting an unstable spec and does not remove it: a spec that failed 6 times in 10 has passed three.
 const RUNS = 3;
 const TOOL_TIMEOUT_MS = 120_000;
 const requireFromRoot = createRequire(join(ROOT, 'package.json'));
@@ -83,7 +85,7 @@ interface Attempt {
   /** For static-check-failed: the gate that stopped the attempt. */
   gate?: Gate;
   problems?: string[];
-  /** sha256 of the spec this attempt wrote to tests/generated/, so a later hand edit is visible. */
+  /** sha256 of the formatted spec this attempt ran. The file left in tests/generated/ is result.specSha256. */
   specSha256?: string;
   appBugReason?: string;
   promptChars: number;
@@ -127,13 +129,15 @@ function killGroup(pid: number): void {
   }
 }
 
+// spawnSync honours `detached` although @types/node leaves it out of its options: the child becomes the
+// leader of a new process group, so a timeout can stop what the child started and not only the child.
+type GroupOptions = SpawnSyncOptionsWithStringEncoding & { detached: boolean };
+
 function callModel(prompt: string, timeoutMs: number): string {
   const command = process.env.GEN_LLM_CMD ?? '';
   // An empty working directory keeps a backend that can read files away from the repository.
   const cwd = mkdtempSync(join(tmpdir(), 'gen-llm-'));
-  // spawnSync honours `detached` although @types/node leaves it out of its options: the shell becomes the
-  // leader of a new process group, so a timeout can stop the model process too and not only the shell.
-  const options: SpawnSyncOptionsWithStringEncoding & { detached: boolean } = {
+  const options: GroupOptions = {
     shell: true,
     detached: true,
     cwd,
@@ -233,15 +237,21 @@ function runPlaywright(specFile: string, outputDir: string): RunResult {
     '--max-failures=1',
     '--workers=1',
   ];
-  const result = spawnSync(process.execPath, args, {
+  const options: GroupOptions = {
+    detached: true,
     cwd: ROOT,
     encoding: 'utf8',
     env: { ...process.env, FORCE_COLOR: '0' },
     timeout: PLAYWRIGHT_TIMEOUT_MS,
     maxBuffer: 32 * 1024 * 1024,
-  });
+  };
+  const result = spawnSync(process.execPath, args, options);
   const ms = Date.now() - started;
-  if (result.error) throw new PipelineError(`Playwright did not complete (${errorCode(result.error)})`);
+  if (result.error) {
+    // On a timeout spawnSync kills only the runner; its workers and browsers would keep running.
+    killGroup(result.pid);
+    throw new PipelineError(`Playwright did not complete (${errorCode(result.error)})`);
+  }
   const raw = `${result.stdout}${result.stderr}`;
   if (result.status !== 0 && result.status !== 1) {
     throw new PipelineError(`Playwright exited with ${result.status ?? result.signal}:\n${raw.slice(-2000)}`);
@@ -251,13 +261,19 @@ function runPlaywright(specFile: string, outputDir: string): RunResult {
     Object.entries(counts)
       .map(([name, n]) => `${n} ${name}`)
       .join(', ') || 'no summary line';
-  // Exit code 0 alone is not a pass: a skipped test also exits 0.
-  const passed = result.status === 0 && counts.passed === RUNS && Object.keys(counts).length === 1;
   const trimmed = trimOutput(raw, [
     [`${ROOT}/`, ''],
     [outputDir, '<output-dir>'],
     [relative(ROOT, outputDir), '<output-dir>'],
   ]);
+  const verdict = runVerdict(result.status, counts, RUNS);
+  // No test failed, so this is not a failed spec: it must not start a repair round or allow APP_BUG.
+  if (verdict === 'did-not-run') {
+    throw new PipelineError(
+      `Playwright exited with 1 and no failed test (${summary}):\n${trimmed.trimEnd().slice(-2000)}`,
+    );
+  }
+  const passed = verdict === 'passed';
   const contextFile = /^\s*Error Context:\s*(.+\.md)\s*$/m.exec(raw)?.[1];
   const contextPath = contextFile ? resolve(ROOT, contextFile) : '';
   const snapshot =
@@ -323,7 +339,6 @@ function generate(source: string, inputPath: string, tc: TestCase): number {
   let verdict: Verdict = 'FAILED';
   let appBugReason: string | undefined;
   let pipelineError: string | undefined;
-  let specWritten = false;
 
   try {
     for (let n = 1; n <= maxRepairs + 1; n += 1) {
@@ -407,10 +422,18 @@ function generate(source: string, inputPath: string, tc: TestCase): number {
 
       // attempt-N.spec.ts keeps the reply as it was; tests/generated/ gets the formatted spec that passed.
       writeFileSync(specFile, checked.code);
-      attempt.specSha256 = sha256(checked.code);
-      specWritten = true;
       log(`${tc.id} attempt ${n}: wrote ${relative(ROOT, specFile)}, running Playwright`);
-      const run = runPlaywright(specFile, outputDir);
+      let run: RunResult;
+      try {
+        run = runPlaywright(specFile, outputDir);
+      } catch (error) {
+        // A spec that Playwright did not run is neither accepted nor judged: tests/generated/ gets the
+        // last spec that ran back, or nothing.
+        if (history.lastRun) writeFileSync(specFile, history.lastRun.code);
+        else rmSync(specFile, { force: true });
+        throw error;
+      }
+      attempt.specSha256 = sha256(checked.code);
       writeLog(`attempt-${n}.log`, run.log);
       attempt.playwrightMs = run.ms;
       attempt.playwright = run.summary;
@@ -459,12 +482,16 @@ function generate(source: string, inputPath: string, tc: TestCase): number {
 
   const total = (pick: (a: Attempt) => number | undefined): number =>
     attempts.reduce((sum, a) => sum + (pick(a) ?? 0), 0);
+  // start() removed the spec of any earlier run, so a file here is the one this run left.
+  const specLeft = existsSync(specFile) ? readFileSync(specFile, 'utf8') : undefined;
   const result = {
     caseId: tc.id,
     title: tc.title,
     // A path outside the repository would put the local directory layout into the log; input.txt has the text.
     input: isInside(ROOT, inputPath) ? relative(ROOT, inputPath) : basename(inputPath),
-    spec: specWritten ? relative(ROOT, specFile) : null,
+    spec: specLeft === undefined ? null : relative(ROOT, specFile),
+    // Not always the spec of the last attempt: a rejected pass puts the last failed spec back.
+    specSha256: specLeft === undefined ? null : sha256(specLeft),
     backend: 'GEN_LLM_CMD',
     maxRepairs,
     verdict,
@@ -495,19 +522,24 @@ function main(argv: string[]): number {
     return input ? 0 : EXIT.PIPELINE_ERROR;
   }
   const inputPath = resolve(input);
-  const source = readFileSync(inputPath, 'utf8');
+  let source: string;
+  try {
+    source = readFileSync(inputPath, 'utf8');
+  } catch (error) {
+    // A missing file, a directory, no permission: the code says which, without a stack trace.
+    if (!(error instanceof Error) || !('code' in error)) throw error;
+    throw new PipelineError(`cannot read the test case "${input}" (${String(error.code)})`);
+  }
   const tc = parseCase(source);
   if (!process.env.GEN_LLM_CMD) throw new PipelineError('GEN_LLM_CMD is not set; see generator/README.md');
+  for (const warning of caseWarnings(tc)) console.error(`[generate] warning: ${warning}`);
   return generate(source, inputPath, tc);
 }
 
 try {
   process.exitCode = main(process.argv.slice(2));
 } catch (error) {
-  if (
-    error instanceof PipelineError ||
-    (error instanceof Error && 'code' in error && error.code === 'ENOENT')
-  ) {
+  if (error instanceof PipelineError) {
     console.error(`[generate] pipeline error: ${error.message}`);
   } else {
     console.error(error);
