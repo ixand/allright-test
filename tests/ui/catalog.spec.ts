@@ -40,9 +40,14 @@ const sortOptions: { label: string; opposite: string; compare: Compare }[] = [
 for (const { label, opposite, compare } of sortOptions) {
   test(`sorting by "${label}" orders the catalog accordingly`, async ({ inventoryPage }) => {
     const expected = [...catalog].sort(compare);
+    const reversed: Compare = (a, b) => compare(b, a);
     await inventoryPage.goto();
-    // Start from the opposite order so that every case, the default A to Z included, proves a change.
+    // A to Z is also the default order. Each case first checks that the opposite sort took effect, so its
+    // final order proves that the chosen option changed the list.
     await inventoryPage.sortBy(opposite);
+    await expect(inventoryPage.itemNames).toHaveText(
+      namesAllowingTies([...catalog].sort(reversed), reversed),
+    );
     await inventoryPage.sortBy(label);
 
     await expect(inventoryPage.activeSortOption).toHaveText(label);

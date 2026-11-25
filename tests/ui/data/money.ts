@@ -9,8 +9,8 @@ export function sumCents(items: readonly Product[]): number {
   return items.reduce((total, item) => total + item.priceCents, 0);
 }
 
-// The shop publishes no tax rule. 8% rounded to the cent is the rate stated in the task brief and
-// observed on the overview page (item total $57.98 -> tax $4.64).
+// The shop publishes no tax rule and the task brief names none. 8% rounded to the cent is the rate observed
+// on the overview page (item total $57.98 -> tax $4.64) and the one the shop's own bundle applies.
 export const TAX_PERCENT = 8;
 
 export function taxCents(itemTotalCents: number): number {

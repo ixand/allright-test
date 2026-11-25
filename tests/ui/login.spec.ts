@@ -6,14 +6,18 @@ const NOT_LOGGED_IN_ERROR = "Epic sadface: You can only access '/inventory.html'
 test.describe('without a session', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
-  test('standard_user logs in and lands on the product list', async ({ page, loginPage, inventoryPage }) => {
-    await loginPage.goto();
-    await loginPage.login(users.standard);
+  test(
+    'standard_user logs in and lands on the product list',
+    { tag: '@smoke' },
+    async ({ page, loginPage, inventoryPage }) => {
+      await loginPage.goto();
+      await loginPage.login(users.standard);
 
-    await expect(page).toHaveURL('/inventory.html');
-    await expect(inventoryPage.title).toHaveText('Products');
-    await expect(inventoryPage.list).toBeVisible();
-  });
+      await expect(page).toHaveURL('/inventory.html');
+      await expect(inventoryPage.title).toHaveText('Products');
+      await expect(inventoryPage.list).toBeVisible();
+    },
+  );
 
   const rejectedLogins: { name: string; credentials: Credentials; error: string }[] = [
     {

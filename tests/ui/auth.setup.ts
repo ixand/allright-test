@@ -2,7 +2,7 @@ import path from 'node:path';
 import { expect, test as setup } from './fixtures.ts';
 import { users } from './data/users.ts';
 
-// Must match `storageState` of the `ui` project in playwright.config.ts.
+// Must match STORAGE_STATE in playwright.config.ts, the storageState of ui-chromium, ui-firefox and ui-webkit.
 const authFile = path.join(__dirname, '../../playwright/.auth/standard_user.json');
 
 setup('log in as standard_user', async ({ page, loginPage, inventoryPage }) => {

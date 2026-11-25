@@ -9,6 +9,7 @@ import type { Product } from './data/products.ts';
  */
 export async function expectLineItems(items: Locator, expected: readonly Product[]): Promise<void> {
   const title = `line items are: ${expected.map((product) => product.name).join(', ')}`;
+
   // Boxed, so a failure is reported at the spec line that called this helper.
   await test.step(
     title,
