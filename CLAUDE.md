@@ -24,7 +24,7 @@ npm run check                 # typecheck + lint + format:check; CI runs the sam
 
 | Path | What lives there |
 | --- | --- |
-| `tests/ui/pages/` | Page objects, one per screen; locators as readonly fields, actions as methods, no assertions |
+| `tests/ui/pages/` | Page objects, one per screen, plus small shared components; locators as readonly fields, actions as methods, no assertions |
 | `tests/ui/fixtures.ts` | `test` extended with page objects, re-exports `expect` |
 | `tests/ui/data/` | Users and catalog data (the expected values) |
 | `tests/ui/auth.setup.ts` | Logs in once and saves `playwright/.auth/standard_user.json` |
@@ -43,8 +43,9 @@ npm run check                 # typecheck + lint + format:check; CI runs the sam
 2. No `waitForTimeout`, sleeps or `networkidle`. Use web-first assertions only (`await expect(locator)…`).
 3. Tests are independent: each has its own context and its own data, and none depends on run order.
 4. Every expected value has a source: the task, the apidoc, RFC 9110 for undocumented error codes,
-   UI copy, or `tests/ui/data`. Never derive it from the value under test. Sorting is the one
-   exception: the expectation is a sorted copy of the catalog data.
+   UI copy, or `tests/ui/data`. Never derive it from the value under test. Two stated
+   exceptions: sorting, where the expectation is a sorted copy of the catalog data, and the 8% tax rate,
+   which saucedemo publishes nowhere and was observed on the overview page.
 5. Money is compared in integer cents, never as floats.
 6. API tests delete every booking they create, in fixture teardown, negative tests included.
 7. Known bugs:
