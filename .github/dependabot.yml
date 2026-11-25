@@ -1,0 +1,23 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      playwright:
+        patterns: ['@playwright/*']
+      lint-and-types:
+        patterns: ['eslint*', '@eslint/*', 'typescript*', 'prettier', '@types/*']
+    ignore:
+      # typescript-eslint supports typescript <6.1; TypeScript 7 has no JS compiler API yet.
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
+      # Node types must match the runtime major in .nvmrc.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
