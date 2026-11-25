@@ -1,4 +1,4 @@
-import { expect } from '@playwright/test';
+import { expect, type APIResponse } from '@playwright/test';
 
 export type BookingDates = {
   checkin: string;
@@ -78,6 +78,12 @@ export function parseCreatedBooking(body: unknown): CreatedBooking {
   return body as CreatedBooking;
 }
 
+/** Narrows a GetBooking response body, failing with every field that breaks the apidoc shape. */
+export function parseBooking(body: unknown): Booking {
+  expect(bookingProblems(body, 'body'), 'GetBooking response shape (apidoc)').toEqual([]);
+  return body as Booking;
+}
+
 /** Narrows a CreateToken response body: apidoc 200 { token }, and an empty token could authorise nothing. */
 export function parseToken(body: unknown): string {
   const token = isJsonObject(body) ? body.token : undefined;
@@ -85,6 +91,20 @@ export function parseToken(body: unknown): string {
     expect.stringMatching(/\S/),
   );
   return token as string;
+}
+
+/**
+ * A response body as JSON, or as its raw text when it is not JSON. The apidoc documents no error bodies, and a
+ * fix may refuse with plain text such as 401 "Unauthorized"; a check on what the body carries, e.g. that it has
+ * no token, then judges that text instead of failing on JSON.parse.
+ */
+export async function readBody(response: APIResponse): Promise<unknown> {
+  const text = await response.text();
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
 }
 
 /** The id from a CreateBooking body, read leniently so that wrongly accepted payloads are still cleaned up. */

@@ -25,6 +25,14 @@ export function newBooking(overrides: Partial<Booking> = {}): Booking {
   };
 }
 
+/** 111.99 in integer cents. The apidoc types totalprice as a Number, so a price with cents is valid. */
+export const PRICE_WITH_CENTS = 11_199;
+
+/** Money is compared in integer cents, never as floats. */
+export function toCents(totalprice: number): number {
+  return Math.round(totalprice * 100);
+}
+
 /** A valid booking that differs from newBooking() in every field, so a full update shows field by field. */
 export function replacementBooking(): Booking {
   return newBooking({

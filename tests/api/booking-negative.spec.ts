@@ -1,4 +1,4 @@
-import { parseToken } from './client/schema.ts';
+import { parseToken, readBody } from './client/schema.ts';
 import { ADMIN, replacementBooking } from './data/bookings.ts';
 import { expect, test } from './fixtures.ts';
 
@@ -58,5 +58,5 @@ test('POST /auth with a wrong password returns no token', async ({ client }) => 
   parseToken(await accepted.json());
 
   const rejected = await client.auth({ ...ADMIN, password: 'wrong-password' });
-  expect(await rejected.json()).not.toHaveProperty('token');
+  expect(await readBody(rejected)).not.toHaveProperty('token');
 });
