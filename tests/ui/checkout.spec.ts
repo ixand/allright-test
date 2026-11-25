@@ -46,7 +46,7 @@ test(
     await test.step('finish confirms the order and empties the cart', async () => {
       await checkoutOverviewPage.finish();
       await expect(page).toHaveURL('/checkout-complete.html');
-      await expect(checkoutCompletePage.header).toHaveText('Thank you for your order!');
+      await expect(checkoutCompletePage.heading).toHaveText('Thank you for your order!');
       await expect(header.cartBadge).toBeHidden();
     });
 

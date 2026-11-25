@@ -4,8 +4,8 @@ import {
   selectors,
   test as base,
   type Browser,
+  type BrowserContext,
   type BrowserContextOptions,
-  type Page,
 } from '@playwright/test';
 import { users } from './data/users.ts';
 import { CartPage } from './pages/CartPage.ts';
@@ -66,10 +66,10 @@ export const test = base.extend<Pages, Sessions>({
     },
     { scope: 'worker' },
   ],
-  page: async ({ page, baseURL }, use) => {
+  context: async ({ context, baseURL }, use) => {
     if (!baseURL) throw new Error('UI tests need baseURL: it is the only origin they let requests reach');
-    await blockOtherOrigins(page, baseURL);
-    await use(page);
+    await blockOtherOrigins(context, baseURL);
+    await use(context);
   },
   loginPage: async ({ page }, use) => {
     await use(new LoginPage(page));
@@ -101,9 +101,10 @@ export { expect };
 
 // Playwright best practice "Only test what you control": besides its own origin the shop calls Google
 // Fonts and Backtrace telemetry. Aborting those keeps tests independent of, and silent towards, both.
-async function blockOtherOrigins(page: Page, baseURL: string): Promise<void> {
+// Routed on the context, not on one page, so a popup or any other page of the context is covered too.
+async function blockOtherOrigins(context: BrowserContext, baseURL: string): Promise<void> {
   const shop = new URL(baseURL).origin;
-  await page.route(
+  await context.route(
     (url) => url.origin !== shop,
     (route) => route.abort('blockedbyclient'),
   );
@@ -135,13 +136,13 @@ async function logInAgain(
 
   const context = await browser.newContext({ baseURL });
   try {
+    await blockOtherOrigins(context, baseURL);
     const page = await context.newPage();
-    await blockOtherOrigins(page, baseURL);
     const loginPage = new LoginPage(page);
     await loginPage.goto();
     await loginPage.login(user);
     await expect(
-      new InventoryPage(page).title,
+      new HeaderComponent(page).title,
       `a new login as ${user.username} must open Products`,
     ).toHaveText('Products');
     const state = await context.storageState();

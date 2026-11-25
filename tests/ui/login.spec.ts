@@ -9,12 +9,12 @@ test.describe('without a session', () => {
   test(
     'standard_user logs in and lands on the product list',
     { tag: '@smoke' },
-    async ({ page, loginPage, inventoryPage }) => {
+    async ({ page, header, loginPage, inventoryPage }) => {
       await loginPage.goto();
       await loginPage.login(users.standard);
 
       await expect(page).toHaveURL('/inventory.html');
-      await expect(inventoryPage.title).toHaveText('Products');
+      await expect(header.title).toHaveText('Products');
       await expect(inventoryPage.list).toBeVisible();
     },
   );
@@ -79,7 +79,7 @@ test('logout ends the session and Back does not reopen the inventory', async ({
   await expect(page).toHaveURL('/');
   await expect(loginPage.loginButton).toBeVisible();
 
-  await page.goBack();
+  await page.goBack({ waitUntil: 'domcontentloaded' });
   await expect(loginPage.error).toHaveText(NOT_LOGGED_IN_ERROR);
   await expect(page).toHaveURL('/');
   await expect(inventoryPage.list).toBeHidden();

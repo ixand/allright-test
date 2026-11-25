@@ -17,7 +17,9 @@ export class LoginPage {
   }
 
   async goto(): Promise<void> {
-    await this.page.goto('/');
+    // 'load' also waits for every image and stylesheet, and on this public sandbox one of them sometimes never
+    // finishes. The DOM is enough: each caller goes on to a web-first assertion on the element it needs.
+    await this.page.goto('/', { waitUntil: 'domcontentloaded' });
   }
 
   async login({ username, password }: Credentials): Promise<void> {

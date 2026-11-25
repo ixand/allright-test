@@ -1,5 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 import type { Customer } from '../data/users.ts';
+import { refusing } from './refusal.ts';
 
 /** Checkout step one, /checkout-step-one.html. */
 export class CheckoutInfoPage {
@@ -12,6 +13,8 @@ export class CheckoutInfoPage {
   readonly usableContinueButton: Locator;
   readonly error: Locator;
   readonly container: Locator;
+  /** Step one while it refuses to go on to the overview, see `refusing()`. */
+  readonly blocked: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -22,6 +25,7 @@ export class CheckoutInfoPage {
     this.usableContinueButton = this.continueButton.and(page.getByRole('button', { disabled: false }));
     this.error = page.getByTestId('error');
     this.container = page.getByTestId('checkout-info-container');
+    this.blocked = refusing(this.container, this.usableContinueButton);
   }
 
   // Not called fill(): playwright/prefer-locator matches calls by name and would take
@@ -37,15 +41,11 @@ export class CheckoutInfoPage {
   }
 
   /**
-   * Enters the details and continues only if step one is open and offers Continue; otherwise does nothing.
-   * Call it right after the click that may have opened step one: the page state is read once.
+   * Enters the details and continues only if step one is on screen and offers Continue; otherwise does
+   * nothing. The page is read once, so call it only after a wait has settled which page is on screen.
    */
   async continueIfOffered(customer: Customer): Promise<void> {
-    if (new URL(this.page.url()).pathname !== '/checkout-step-one.html') return;
-    // The URL changes before the page renders. Once this page's own container is on screen, Continue is
-    // either rendered or absent for good.
-    await this.container.waitFor();
-    if ((await this.usableContinueButton.count()) === 0) return;
+    if (!(await this.usableContinueButton.isVisible())) return;
     await this.enterDetails(customer);
     await this.usableContinueButton.click();
   }

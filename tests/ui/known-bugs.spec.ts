@@ -42,41 +42,75 @@ test(
 );
 
 test(
-  'BUG-UI-02: an empty cart offers no way to check out',
+  'BUG-UI-02: an empty cart cannot end in a confirmed order',
   {
     tag: '@bug',
     annotation: { type: 'issue', description: 'https://github.com/ixand/allright-test#bug-ui-02' },
   },
-  async ({ page, header, inventoryPage, cartPage, checkoutInfoPage, checkoutOverviewPage }) => {
+  async ({
+    page,
+    header,
+    inventoryPage,
+    cartPage,
+    checkoutInfoPage,
+    checkoutOverviewPage,
+    checkoutCompletePage,
+  }) => {
     await inventoryPage.goto();
     await inventoryPage.addToCart(products.backpack);
     await cartPage.goto();
     await expectLineItems(cartPage.items, [products.backpack]);
-    // checkoutIfOffered() decides by this locator, so it must find the real button while the cart has an item.
+    // The journey below decides by these locators, so they must tell a cart that offers checkout from one
+    // that does not while the answer is known: with an item in it, the cart offers checkout.
     await expect(cartPage.usableCheckoutButton).toBeVisible();
+    await expect(cartPage.blocked).toBeHidden();
 
     await cartPage.remove(products.backpack);
     await expect(cartPage.items).toHaveCount(0);
     await expect(header.cartBadge).toBeHidden();
-    await expect(cartPage.title).toHaveText('Your Cart');
+    await expect(header.title).toHaveText('Your Cart');
     await expect(cartPage.continueShoppingButton).toBeVisible();
-    // Go as far as the shop lets an empty cart go. Stopping it at any step fixes the bug: Checkout hidden,
-    // disabled, refused or sent elsewhere, or step one or the overview refusing to go on.
+
+    // Go as far as the shop lets an empty cart go. Stopping it at any step fixes the bug, and a stop is a
+    // state the test can wait for: the cart, step one or the overview on screen with its button hidden or
+    // disabled or with an error shown, or the customer sent back to the product list.
+    // Each click is followed by a wait for the next page or a stop. Both are states that only appear, so
+    // the wait cannot be satisfied by the page the click was made on, and the *IfOffered() read that
+    // follows sees a page that has settled.
+    // Not recognised: a click that is ignored without any message. No state tells it from a click whose
+    // page has not opened yet, so the wait after it times out and the test fails before test.fail(): it
+    // is reported as failed, not as fixed, and never as passed.
+    const stopped = cartPage.blocked
+      .or(checkoutInfoPage.blocked)
+      .or(checkoutOverviewPage.blocked)
+      .or(inventoryPage.list);
     await cartPage.checkoutIfOffered();
+    await expect(
+      checkoutInfoPage.container.or(stopped),
+      'after Checkout: step one opens, or the shop visibly stops the empty cart',
+    ).toBeVisible();
     await checkoutInfoPage.continueIfOffered(customer);
+    await expect(
+      checkoutOverviewPage.container.or(stopped),
+      'after Continue: the overview opens, or the shop visibly stops the empty cart',
+    ).toBeVisible();
     await checkoutOverviewPage.finishIfOffered();
-    await expect(header.cartLink, 'the customer is still in the shop').toBeVisible();
+    await expect(
+      checkoutCompletePage.container.or(stopped),
+      'after Finish: the order is confirmed, or the shop visibly stops the empty cart',
+    ).toBeVisible();
 
     test.fail(
       true,
       'BUG-UI-02: Checkout stays enabled on an empty cart and opens checkout; Finish then confirms an order with "Total: $0.00"',
     );
 
-    // The URL changes before the next page renders, so the URL, not the page content, is the reliable
-    // sign of whether Finish confirmed an order.
+    // The wait above ended on the confirmation or on a stop, so the journey is over and this is not a
+    // check that can pass just because the last click has not taken effect yet.
     await expect(page, 'an empty cart must not end in a confirmed order').not.toHaveURL(
       '/checkout-complete.html',
     );
+    await expect(checkoutCompletePage.container).toBeHidden();
   },
 );
 
@@ -104,18 +138,27 @@ for (const { field, input, named } of whitespaceOnly) {
       await expect(checkoutInfoPage.firstName).toHaveValue(input.firstName);
       await expect(checkoutInfoPage.lastName).toHaveValue(input.lastName);
       await expect(checkoutInfoPage.postalCode).toHaveValue(input.postalCode);
+      // A fix that disables Continue for such input is not handled: this control then fails, and the test
+      // is reported as failed, not as fixed. That is the moment to rewrite the bug assertions below.
+      await expect(checkoutInfoPage.continueButton).toBeEnabled();
       await checkoutInfoPage.submit();
       // Either outcome proves the submit went through: an error on step one, or the overview.
       await expect(checkoutInfoPage.error.or(checkoutOverviewPage.finishButton)).toBeVisible();
 
       test.fail(true, `BUG-UI-03: "   " passes the ${field} check and checkout moves on to the overview`);
 
-      // Any wording is a valid fix, as long as the customer stays on step one and is told which field is wrong.
+      // Any wording is a valid fix, as long as the customer stays on step one and is told which field is
+      // wrong. Naming the field is part of the expectation because the title says "like an empty one", and
+      // an empty field gets "Error: <field> is required". An error that names no field keeps this test an
+      // expected failure, on purpose.
       await expect(page, 'whitespace-only input must keep the customer on step one').toHaveURL(
         '/checkout-step-one.html',
       );
       await expect(checkoutInfoPage.error).toBeVisible();
-      await expect(checkoutInfoPage.error, `the error must name ${field}`).toHaveText(named);
+      await expect(
+        checkoutInfoPage.error,
+        `the error must name ${field}, as the error for an empty ${field} does`,
+      ).toHaveText(named);
     },
   );
 }

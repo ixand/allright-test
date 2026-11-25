@@ -1,8 +1,10 @@
 import type { Locator, Page } from '@playwright/test';
 
-/** Header shared by every page after login: cart link, cart badge and the side menu. */
+/** Header shared by every page after login: page title, cart link, cart badge and the side menu. */
 export class HeaderComponent {
   readonly page: Page;
+  /** The name of the page on screen, e.g. "Products" or "Your Cart". */
+  readonly title: Locator;
   readonly cartLink: Locator;
   readonly cartBadge: Locator;
   readonly menuButton: Locator;
@@ -11,6 +13,7 @@ export class HeaderComponent {
 
   constructor(page: Page) {
     this.page = page;
+    this.title = page.getByTestId('title');
     this.cartLink = page.getByTestId('shopping-cart-link');
     this.cartBadge = page.getByTestId('shopping-cart-badge');
     // The menu <button> has no data-test; data-test="open-menu" belongs to the icon image beside it.

@@ -22,7 +22,7 @@ test('the cart lists exactly the added products, and removing one updates cart a
 
   await header.openCart();
   await expect(page).toHaveURL('/cart.html');
-  await expect(cartPage.title).toHaveText('Your Cart');
+  await expect(header.title).toHaveText('Your Cart');
   await expectLineItems(cartPage.items, [backpack, boltTShirt]);
 
   await cartPage.remove(backpack);
@@ -37,7 +37,7 @@ test('the cart survives a page reload', async ({ page, header, inventoryPage, ca
   await inventoryPage.addToCart(redTShirt);
   await expect(header.cartBadge).toHaveText('2');
 
-  await page.reload();
+  await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(header.cartBadge).toHaveText('2');
   await expect(inventoryPage.cartButton(onesie)).toHaveText('Remove');
   await expect(inventoryPage.cartButton(redTShirt)).toHaveText('Remove');
@@ -56,6 +56,6 @@ test('Reset App State empties the cart', async ({ header, inventoryPage, cartPag
 
   // Checked on a freshly opened cart: a page already on screen keeps its stale cart state (BUG-UI-04).
   await header.openCart();
-  await expect(cartPage.title).toHaveText('Your Cart');
+  await expect(header.title).toHaveText('Your Cart');
   await expect(cartPage.items).toHaveCount(0);
 });

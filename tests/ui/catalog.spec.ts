@@ -2,10 +2,10 @@ import { expect, test } from './fixtures.ts';
 import { catalog, type Product } from './data/products.ts';
 import { usd } from './data/money.ts';
 
-test('the inventory lists the six catalog products with their prices', async ({ inventoryPage }) => {
+test('the inventory lists the six catalog products with their prices', async ({ header, inventoryPage }) => {
   await inventoryPage.goto();
 
-  await expect(inventoryPage.title).toHaveText('Products');
+  await expect(header.title).toHaveText('Products');
   await expect(inventoryPage.itemNames).toHaveText(catalog.map((product) => product.name));
   await expect(inventoryPage.itemPrices).toHaveText(catalog.map((product) => usd(product.priceCents)));
 });
@@ -52,6 +52,11 @@ for (const { label, opposite, compare } of sortOptions) {
 
     await expect(inventoryPage.activeSortOption).toHaveText(label);
     await expect(inventoryPage.itemNames).toHaveText(namesAllowingTies(expected, compare));
+    // A tied position accepts either tied name, so the line above alone would pass a list that shows one
+    // of them twice and the other not at all.
+    for (const product of catalog) {
+      await expect(inventoryPage.itemNamed(product), `${product.name} is listed once`).toHaveCount(1);
+    }
     await expect(inventoryPage.itemPrices).toHaveText(expected.map((product) => usd(product.priceCents)));
   });
 }

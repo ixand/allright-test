@@ -3,7 +3,6 @@ import type { Product } from '../data/products.ts';
 
 export class InventoryPage {
   readonly page: Page;
-  readonly title: Locator;
   readonly list: Locator;
   readonly itemNames: Locator;
   readonly itemPrices: Locator;
@@ -12,7 +11,6 @@ export class InventoryPage {
 
   constructor(page: Page) {
     this.page = page;
-    this.title = page.getByTestId('title');
     this.list = page.getByTestId('inventory-list');
     this.itemNames = this.list.getByTestId('inventory-item-name');
     this.itemPrices = this.list.getByTestId('inventory-item-price');
@@ -21,7 +19,7 @@ export class InventoryPage {
   }
 
   async goto(): Promise<void> {
-    await this.page.goto('/inventory.html');
+    await this.page.goto('/inventory.html', { waitUntil: 'domcontentloaded' });
   }
 
   async sortBy(label: string): Promise<void> {
@@ -34,6 +32,11 @@ export class InventoryPage {
 
   async openDetails(product: Product): Promise<void> {
     await this.page.getByTestId(`item-${product.id}-title-link`).click();
+  }
+
+  /** Every list entry whose name is exactly `product.name`; a correct list has one. */
+  itemNamed(product: Product): Locator {
+    return this.itemNames.and(this.page.getByText(product.name, { exact: true }));
   }
 
   /** The product's cart button in either state; its test id changes from add-to-cart-* to remove-*. */
