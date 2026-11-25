@@ -14,7 +14,7 @@ npm test                      # every project
 npm run test:ui               # ui-chromium, ui-firefox, ui-webkit (+ ui-setup)
 npm run test:api | test:generated
 npm run test:smoke            # @smoke: the critical path only
-npm run test:bugs             # @bug: known defects, expected to fail
+npm run test:bugs             # @bug: known defects, parked (skipped while the bug is open)
 npm run test:unit             # node --test for the generator's static checks and weakening guard
 npx playwright test <file> --project=ui-chromium --reporter=list --retries=0
 npm run check                 # typecheck + lint + format:check; CI runs the same three
@@ -29,6 +29,7 @@ npm run check                 # typecheck + lint + format:check; CI runs the sam
 | `tests/ui/data/` | Users and catalog data (the expected values) |
 | `tests/ui/auth.setup.ts` | Logs in once and saves `playwright/.auth/standard_user.json` |
 | `tests/api/` | Booking client, fixtures with teardown, specs |
+| `tests/support/` | `knownBug.ts`: parking a test on a registered bug |
 | `tests/generated/` | Output of the generator. Hand edits must be recorded in `generator/examples/` |
 | `generator/` | Pipeline script, prompt template, app map, examples |
 
@@ -48,18 +49,20 @@ npm run check                 # typecheck + lint + format:check; CI runs the sam
    which saucedemo publishes nowhere and was observed on the overview page.
 5. Money is compared in integer cents, never as floats.
 6. API tests delete every booking they create, in fixture teardown, negative tests included.
-7. Known bugs:
+7. Known bugs are **parked**, not expected to fail:
    - Assert the **correct** behaviour, tag `@bug`, and add
      `annotation: { type: 'issue', description: 'https://github.com/ixand/allright-test#bug-xxx-nn' }`.
-   - Run the positive controls first, then call `test.fail(true, 'BUG-XXX-NN: …')` in the body, then
-     the bug assertion. A control that fails before that call stays a real failure. The declaration
-     form `test.fail(title, body)` would swallow it, so do not use that form.
-   - Accept every correct fix, e.g. any 4xx for a validation bug, so a fix turns the test into
-     "unexpectedly passed".
+   - Run the positive controls first as plain assertions, then wrap only the bug assertion in
+     `parkedOn('BUG-XXX-NN', '<symptom>', async () => { … })` from `tests/support/knownBug.ts`.
+     While the bug is open the test is skipped with a note that quotes the failure. Once it is fixed
+     the test simply passes and the report says to unpark it. A failing control is a real failure.
+   - Do not use `test.fail()`: a fixed bug would arrive as a red run.
+   - Hard assertions only inside `parkedOn`; `expect.soft` cannot be parked.
+   - Accept every correct fix, e.g. any 4xx for a validation bug.
    - Register the bug in `README.md` under the same id.
 8. Never weaken an assertion or change an expected value to get green. On a failure, first decide
    whether it is a test bug or an app bug, and show the evidence.
-9. Tags: `@smoke` for the critical path (login, checkout, booking lifecycle), `@bug` for known defects.
+9. Tags: `@smoke` for the critical path (login, checkout, booking lifecycle), `@bug` for parked known defects.
 
 ## Definition of done for a test
 
