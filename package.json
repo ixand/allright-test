@@ -1,0 +1,35 @@
+{
+  "name": "qa-automation-saucedemo-restful-booker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright + TypeScript: UI tests for saucedemo.com, API tests for restful-booker, CI, and a text-to-test generator",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --project=\"ui-*\"",
+    "test:api": "playwright test --project=api",
+    "test:generated": "playwright test --project=generated",
+    "test:bugs": "playwright test --grep @bug",
+    "report": "playwright show-report",
+    "typecheck": "tsc --noEmit",
+    "generate": "node generator/generate.ts",
+    "test:smoke": "playwright test --grep @smoke",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run typecheck && npm run lint && npm run format:check"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.1",
+    "@types/node": "^22.20.6",
+    "eslint": "^10.15.0",
+    "eslint-plugin-playwright": "^2.12.2",
+    "prettier": "^3.10.1",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.74.0"
+  }
+}
