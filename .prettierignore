@@ -1,0 +1,9 @@
+node_modules/
+playwright-report/
+test-results/
+blob-report/
+playwright/.auth/
+package-lock.json
+# Raw model output, kept verbatim as evidence of what the generator produced.
+generator/examples/
+*.md
